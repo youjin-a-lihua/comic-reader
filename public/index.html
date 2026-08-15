@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>鸽子漫画</title>
+<style>
+  /* critical fallback: 防止缓存旧 CSS 时网格/卡片撑满全屏 */
+  .manga-grid, .library-grid, .recent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+  .manga-card, .comic-card { aspect-ratio: 3/4; border-radius: 12px; overflow: hidden; background: #111; cursor: pointer; }
+  .manga-cover, .manga-cover img, .comic-cover, .comic-cover img, .profile-cover img { width: 100%; height: 100%; object-fit: cover; }
+  .profile-list { display: flex; flex-direction: column; gap: 12px; }
+  .profile-item { display: flex; gap: 12px; align-items: center; cursor: pointer; padding: 8px; border-radius: 12px; }
+  .profile-cover { width: 80px; min-width: 80px; aspect-ratio: 3/4; border-radius: 8px; overflow: hidden; background: #222; }
+  .profile-info { flex: 1; min-width: 0; }
+  .filter-chips-track { display: flex; gap: 8px; overflow-x: auto; padding: 8px 12px; }
+  .filter-chip { flex: 0 0 auto; padding: 6px 14px; border-radius: 999px; background: #222; color: #eee; border: none; font-size: 13px; cursor: pointer; }
+  .filter-chip.active { background: var(--accent, #ff6b35); color: #fff; }
+  /* ── JM 下载 / 详情 弹窗 ── */
+  .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; backdrop-filter: blur(2px); }
+  .modal-box { width: 100%; max-width: 460px; max-height: 86vh; overflow-y: auto; background: var(--card,#1c1c22); border: 1px solid var(--border,#333); border-radius: 16px; padding: 18px 18px 20px; color: var(--text,#eee); box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  .modal-sub { font-size: 12px; color: var(--muted,#888); margin-bottom: 12px; line-height: 1.5; }
+  .modal-input { width: 100%; box-sizing: border-box; padding: 11px 12px; margin: 10px 0 8px; border-radius: 10px; border: 1px solid var(--border,#333); background: var(--input,#121216); color: var(--text,#eee); font-size: 15px; }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .seg-btn { flex: 1 1 auto; min-width: 84px; padding: 8px 10px; cursor: pointer; border-radius: 9px; border: 1px solid var(--border,#333); background: var(--input,#121216); color: var(--muted,#aaa); font-size: 13px; transition: all .15s; }
+  .seg-btn.active { background: var(--accent,#ff5b78); border-color: var(--accent,#ff5b78); color: #fff; font-weight: 600; }
+  .jm-preview { font-size: 12px; color: var(--muted,#888); margin: 2px 0 12px; font-family: ui-monospace, Menlo, Consolas, monospace; word-break: break-all; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .modal-actions .modal-btn { flex: 1; }
+  .modal-btn { padding: 11px; border-radius: 10px; border: 1px solid var(--border,#333); background: var(--input,#121216); color: var(--text,#eee); font-size: 14px; cursor: pointer; }
+  .modal-btn.ghost { background: transparent; border-color: var(--border,#333); color: var(--muted,#aaa); }
+  .modal-btn.accent { background: var(--accent,#ff5b78); border-color: var(--accent,#ff5b78); color: #fff; font-weight: 600; }
+  .modal-btn.small { width: auto; flex: none; padding: 8px 14px; font-size: 13px; margin-top: 8px; }
+  .modal-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .modal-set { border-top: 1px solid var(--border,#333); margin-top: 16px; padding-top: 12px; }
+  .modal-set-title { font-size: 12px; color: var(--muted,#888); margin-bottom: 8px; }
+  .modal-set-row { font-size: 13px; color: var(--muted,#aaa); margin-bottom: 6px; }
+  .modal-url { width: 100%; box-sizing: border-box; padding: 8px 10px; margin-top: 3px; border-radius: 8px; border: 1px solid var(--border,#333); background: var(--input,#121216); color: var(--text,#eee); font-size: 13px; }
+  .jm-result { margin-top: 14px; padding: 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; background: var(--input,#121216); border: 1px solid var(--border,#333); white-space: normal; }
+  .jm-result.ok { border-color: #3a7d4f; }
+  .jm-result.err { border-color: #a4453a; color: #ffb4a8; }
+  .jm-progress { height: 10px; border-radius: 6px; background: var(--border,#333); overflow: hidden; margin: 8px 0 4px; }
+  .jm-progress-bar { height: 100%; width: 0; background: linear-gradient(90deg,#ff5b78,#ff8a5b); transition: width .5s; }
+  .jm-progress-label { font-size: 12px; color: var(--muted,#aaa); margin-bottom: 6px; }
+  .jm-log { max-height: 180px; overflow-y: auto; margin-top: 6px; font-size: 12px; color: var(--muted,#bbb); }
+  .jm-log div { padding: 3px 0; border-bottom: 1px dashed rgba(255,255,255,.06); }
+  .jm-detail-cover { text-align: center; margin-bottom: 10px; }
+  .jm-detail-cover img { max-width: 160px; max-height: 220px; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+  .jm-detail-meta { font-size: 13px; line-height: 1.7; color: var(--text,#eee); }
+  .jm-detail-line { white-space: pre-wrap; word-break: break-word; }
+</style>
+  <link rel="stylesheet" href="/css/fnos-theme.css?v=20260814q">
+  <link rel="stylesheet" href="/css/reader.css?v=20260814j">
+  <link rel="stylesheet" href="/css/detail.css?v=20260813r">
+</head>
+<body data-layout="spatial" data-theme="dark">
+
+  <!-- 动态环境光引擎 -->
+  <div class="ambient-bg">
+    <div id="ambientAura" class="ambient-aura"></div>
+  </div>
+
+  <header class="header-container">
+    <h1 id="pageTitle">漫画</h1>
+    <div class="header-actions">
+      <!-- 搜索/管理交互 -->
+      <button class="icon-btn" onclick="switchPage('search')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      </button>
+      <!-- 双轨制布局切换器 -->
+      <button class="icon-btn" onclick="toggleLayout()" id="layoutToggleBtn" title="切换视图">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+      </button>
+      <button class="icon-btn" id="themeToggleBtn" onclick="cycleTheme()" title="切换主题">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+      <div class="user-avatar" onclick="window.location.href='/admin'" title="管理后台">A</div>
+    </div>
+  </header>
+
+  <!-- ═══ 漫画 ═══ -->
+  <div id="page-comic" class="page active">
+    <!-- 可折叠标签区 -->
+    <div class="filter-scroll-container tag-section">
+      <div class="tag-section-header" onclick="toggleTagSection('comic')">
+        <span class="tag-section-title">标签 <span class="count" id="tagSectionCountComic">0</span></span>
+        <svg class="tag-section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </div>
+      <div id="tagSectionBodyComic" class="tag-section-body">
+        <div class="filter-scroll-row">
+          <button class="scroll-btn" onclick="scrollTrack('tagSectionBodyComic', -1)" aria-label="向左滚动">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <div id="filterChips" class="filter-chips-track"></div>
+          <button class="scroll-btn" onclick="scrollTrack('tagSectionBodyComic', 1)" aria-label="向右滚动">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="sort-bar">
+        <span class="sort-label">排序</span>
+        <button class="sort-chip active" data-sort="series" onclick="setComicSort('series')">按系列</button>
+        <button class="sort-chip" data-sort="time" onclick="setComicSort('time')">按时间</button>
+      </div>
+      <section id="continueComic"></section>
+      <section id="recommendStrip" class="recommend-strip" style="display:none"></section>
+      <div class="manga-grid" id="comicGrid"></div>
+    </div>
+  </div>
+
+  <!-- ═══ 小说 ═══ -->
+  <div id="page-novel" class="page">
+    <div class="filter-scroll-container tag-section">
+      <div class="tag-section-header" onclick="toggleTagSection('novel')">
+        <span class="tag-section-title">标签 <span class="count" id="tagSectionCountNovel">0</span></span>
+        <svg class="tag-section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </div>
+      <div id="tagSectionBodyNovel" class="tag-section-body">
+        <div class="filter-scroll-row">
+          <button class="scroll-btn" onclick="scrollTrack('tagSectionBodyNovel', -1)" aria-label="向左滚动">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <div id="filterChipsNovel" class="filter-chips-track"></div>
+          <button class="scroll-btn" onclick="scrollTrack('tagSectionBodyNovel', 1)" aria-label="向右滚动">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="sort-bar">
+        <span class="sort-label">排序</span>
+        <button class="sort-chip active" data-sort="series" onclick="setNovelSort('series')">按系列</button>
+        <button class="sort-chip" data-sort="time" onclick="setNovelSort('time')">按时间</button>
+      </div>
+      <section id="continueNovel"></section>
+      <div class="manga-grid" id="novelGrid"></div>
+    </div>
+  </div>
+
+  <!-- ═══ 全部 / 搜索 / 我的... [保持原状的视图占位符] ═══ -->
+  <div id="page-all" class="page">
+    <div class="filter-scroll-container tag-section">
+      <div class="tag-section-header" onclick="toggleTagSection('all')">
+        <span class="tag-section-title">筛选 <span class="count" id="tagSectionCountAll">0</span></span>
+        <svg class="tag-section-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </div>
+      <div id="tagSectionBodyAll" class="tag-section-body">
+        <div class="filter-scroll-row">
+          <button class="scroll-btn" onclick="scrollTrack('tagSectionBodyAll', -1)" aria-label="向左滚动">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <div id="filterChipsAll" class="filter-chips-track"></div>
+          <button class="scroll-btn" onclick="scrollTrack('tagSectionBodyAll', 1)" aria-label="向右滚动">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+        </div>
+        <button id="filterClear" class="filter-clear" style="display:none" onclick="clearFilters()">清除筛选</button>
+      </div>
+    </div>
+    <div class="page-content">
+      <div class="sort-bar">
+        <span class="sort-label">排序</span>
+        <button class="sort-chip active" data-sort="series" onclick="setAllSort('series')">按系列</button>
+        <button class="sort-chip" data-sort="time" onclick="setAllSort('time')">按时间</button>
+      </div>
+      <div class="manga-grid" id="allGrid"></div>
+    </div>
+  </div>
+  <div id="page-search" class="page">
+    <div class="page-content">
+      <div class="search-bar">
+        <input id="searchInput" class="search-input" type="text" placeholder="搜索漫画、小说、作者或标签" autocomplete="off" oninput="onSearch()">
+        <button id="searchClear" class="search-clear" onclick="clearSearch()" style="display:none" aria-label="清除">✕</button>
+      </div>
+      <div class="search-actions">
+        <button class="action-btn" onclick="openLocalSearch()">🔍 查找本地</button>
+        <button class="action-btn accent" onclick="openJmDownload()">⬇️ 从JM下载</button>
+      </div>
+      <div id="searchInitial" class="search-initial">
+        <div id="recentSearches" class="recent-searches"></div>
+      </div>
+      <div id="searchResults" class="search-results" style="display:none">
+        <div id="searchGrid" class="manga-grid"></div>
+      </div>
+      <div id="searchEmpty" class="search-empty" style="display:none">
+        <p>没有找到相关结果</p>
+      </div>
+    </div>
+  </div>
+  <!-- ═══ 在线（禁漫天堂，在线阅读，无需下载） ═══ -->
+  <div id="page-online" class="page">
+    <div class="page-content">
+      <div class="search-bar">
+        <input id="onlineSearchInput" class="search-input" type="text" placeholder="搜索在线漫画（标题 / 作者）" autocomplete="off"
+          oninput="onOnlineSearchInput()" onkeydown="if(event.key==='Enter')onlineSearch(1)">
+        <button id="onlineSearchClear" class="search-clear" onclick="clearOnlineSearch()" style="display:none" aria-label="清除">✕</button>
+      </div>
+      <div class="search-actions">
+        <button class="action-btn accent" onclick="onlineSearch(1)">🔍 在线搜索</button>
+      </div>
+      <div id="onlineInitial" class="search-initial">
+        <p style="color:var(--muted,#888);text-align:center;padding:30px 12px;font-size:13px;line-height:1.8;">输入关键词搜索禁漫天堂<br>结果在线阅读，无需下载</p>
+      </div>
+      <div id="onlineLoading" style="display:none;text-align:center;padding:30px;color:var(--muted,#888);">搜索中…</div>
+      <div id="onlineResults" class="search-results" style="display:none">
+        <div id="onlineGrid" class="manga-grid"></div>
+        <div id="onlineMore" style="text-align:center;margin:16px 0;">
+          <button class="action-btn" onclick="onlineSearch(currentOnlinePage+1)">加载更多</button>
+        </div>
+      </div>
+      <div id="onlineEmpty" class="search-empty" style="display:none">
+        <p>没有找到相关结果</p>
+      </div>
+    </div>
+  </div>
+  <!-- ═══ 个人中心 ═══ -->
+  <div id="page-profile" class="page">
+    <div class="page-content" id="profileContent">
+      <div class="profile-loading">加载中...</div>
+    </div>
+    <div class="page-content" style="padding-top: 0;">
+      <h2 class="section-title">我的书架</h2>
+      <div id="shelvesList" class="shelves-list"></div>
+      <div id="shelvesContent" class="shelves-content"></div>
+    </div>
+  </div>
+  <div class="reader-container" id="reader" style="display:none"></div>
+  <!-- ═══ 排行榜 ═══ -->
+  <div id="page-ranking" class="page">
+    <div class="page-content">
+      <div class="rank-tabs">
+        <button id="rankTabWeek" class="rank-tab active" onclick="switchRankTab('weekly')">本周热榜</button>
+        <button id="rankTabAll" class="rank-tab" onclick="switchRankTab('allTime')">总榜</button>
+      </div>
+      <div id="rankingList" class="ranking-list"></div>
+    </div>
+  </div>
+  <div id="page-detail" class="page"><div class="page-content" id="detailContent"></div></div>
+
+  <!-- 灵动岛底部导航 -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-page="comic" onclick="switchPage('comic')">漫画</button>
+    <button class="nav-item" data-page="novel" onclick="switchPage('novel')">小说</button>
+    <button class="nav-item" data-page="all" onclick="switchPage('all')">全库</button>
+    <button class="nav-item" data-page="online" onclick="switchPage('online')">在线</button>
+    <button class="nav-item" data-page="ranking" onclick="switchPage('ranking')">排行</button>
+    <button class="nav-item" data-page="profile" onclick="switchPage('profile')">我的</button>
+  </nav>
+
+  <!-- AstrBot 弹窗与依赖保持不变 -->
+  <!-- ── AstrBot 下载弹窗 ── -->
+  <div class="modal-mask" id="jmModal" style="display:none" onclick="if(event.target===this)closeJmModal()">
+    <div class="modal-box">
+      <div class="modal-title">从 JM 下载</div>
+      <div class="modal-sub">一键把指令发给 AstrBot 触发下载，完成后自动入库到漫画目录</div>
+      <div class="seg" id="jmSeg"></div>
+      <input type="text" id="jmInput" class="modal-input" placeholder="JM ID" oninput="updateJmPreview()">
+      <div class="jm-preview" id="jmPreview">/jm </div>
+      <div id="jmResult" class="jm-result" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="modal-btn" onclick="closeJmModal()">取消</button>
+        <button class="modal-btn ghost" onclick="copyJmCommand()">复制指令</button>
+        <button class="modal-btn accent" id="jmSendBtn" onclick="sendJmCommand()">发送指令</button>
+      </div>
+      <div class="modal-set">
+        <div class="modal-set-title">AstrBot 配置（仅存服务端，不下发前端）</div>
+        <div class="modal-set-row">地址：<input type="text" id="jmUrl" class="modal-url" placeholder="http://你的AstrBot地址:6185"></div>
+        <div class="modal-set-row">账号：<input type="text" id="jmUser" class="modal-url" placeholder="如 AKI"></div>
+        <div class="modal-set-row">密码：<input type="password" id="jmPass" class="modal-url" placeholder="留空 = 不修改"></div>
+        <button class="modal-btn small" onclick="saveJmConfig()">保存配置</button>
+      </div>
+    </div>
+  </div>
+  <div id="fnToast" class="fn-toast"></div>
+  <script src="/js/api.js?v=20260815b"></script>
+  <script src="/js/app.js?v=20260815b"></script>
+  <script src="/js/reader.js?v=20260815b"></script>
+  <script>document.addEventListener('DOMContentLoaded', () => { initApp(); });</script>
+</body>
+</html>

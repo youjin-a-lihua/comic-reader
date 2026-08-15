@@ -1,0 +1,23 @@
+{
+  "name": "comic-reader",
+  "version": "1.2.0",
+  "description": "通用漫画阅读器 — 本地 PDF/CBZ/CBR/EPUB 阅读 + 可插拔在线源（jm 等）。自带账号登录、书架、进度、AstrBot 联动。",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "compression": "^1.7.4",
+    "express": "^4.21.0",
+    "jimp": "^0.22.12",
+    "jsonwebtoken": "^9.0.2",
+    "mime-types": "^2.1.35",
+    "sharp": "^0.33.5",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

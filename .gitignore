@@ -1,0 +1,28 @@
+# 依赖与构建缓存（镜像内会重新 npm install）
+node_modules
+npm-debug.log*
+
+# 运行时数据（含 JWT 密钥、用户、书架、AstrBot 配置）—— 绝不提交
+data
+/app/data
+
+# 密钥 / 环境
+.env
+.env.*
+!.env.example
+
+# 日志
+*.log
+
+# 本地漫画（别把库传上 GitHub）
+comics
+/comics
+
+# 编辑器 / 系统
+.DS_Store
+.idea
+.vscode
+
+# 本仓库的导出包与历史备份
+app.tar.gz
+backup_*

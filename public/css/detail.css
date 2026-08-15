@@ -1,0 +1,459 @@
+/* ═══ 漫画详情 / 系列枢纽页 ═══ */
+
+#page-detail .page-content {
+  padding: 0 16px 96px;
+}
+
+/* 头部大图 + 元信息 */
+.detail-hero {
+  display: flex;
+  gap: 16px;
+  padding: 16px 0 12px;
+  align-items: stretch;
+}
+
+.detail-cover {
+  width: 116px;
+  height: 164px;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--bg-card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+}
+.detail-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.detail-cover .placeholder-cover {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: var(--text-tertiary);
+}
+
+.detail-meta-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.detail-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 2px 0 6px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.detail-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.detail-tag {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+/* 继续 / 开始阅读 主按钮 */
+.detail-start {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 46px;
+  border: none;
+  border-radius: 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s, background 0.15s;
+}
+.detail-start:active { transform: scale(0.97); background: var(--accent-hover); }
+.detail-start .sub {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+/* 同系列卷列表 */
+.detail-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 18px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.detail-section-title .count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.volume-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.volume-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--bg-card);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.15s;
+}
+.volume-item:active { transform: scale(0.98); }
+.volume-item.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-glow);
+}
+.volume-thumb {
+  width: 46px;
+  height: 62px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+.volume-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.volume-thumb .placeholder-cover {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: var(--text-tertiary);
+}
+.volume-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.volume-name {
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.volume-state {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+.volume-state.reading { color: var(--accent); }
+.volume-state.read { color: var(--text-secondary); }
+.volume-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #fff;
+  background: var(--accent);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.volume-badge.read { background: var(--text-tertiary); }
+
+/* ═══ 评论区 ═══ */
+.comment-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 6px;
+}
+.comment-nick {
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 0 12px;
+  font-size: 13px;
+  outline: none;
+}
+.comment-text {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  font-size: 14px;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+.comment-nick:focus, .comment-text:focus { border-color: var(--accent); }
+.comment-submit {
+  align-self: flex-end;
+  height: 38px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.comment-submit:active { transform: scale(0.97); }
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+.comment-empty {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  padding: 12px 0;
+  text-align: center;
+}
+.comment-item {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.comment-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.comment-name { font-size: 13px; font-weight: 600; color: var(--accent); }
+.comment-time { font-size: 11px; color: var(--text-tertiary); }
+.comment-body {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* ═══ 标签云（漫画页顶部） ═══ */
+.tag-cloud {
+  display: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0 4px;
+}
+.tag-pill {
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid transparent;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.tag-pill .count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-left: 4px;
+}
+.tag-pill.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.tag-pill.active .count { color: rgba(255,255,255,0.8); }
+
+/* ═══ 搜索页操作按钮 ═══ */
+.search-actions {
+  display: flex;
+  gap: 10px;
+  padding: 10px 16px 4px;
+}
+.action-btn {
+  flex: 1;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.action-btn.accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.action-btn:active { transform: scale(0.98); }
+
+/* ═══ AstrBot 弹窗 ═══ */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+  padding: 20px;
+}
+.modal-box {
+  width: 100%;
+  max-width: 360px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+}
+.modal-title { font-size: 17px; font-weight: 600; color: var(--text-primary); }
+.modal-sub { font-size: 12px; color: var(--text-tertiary); margin: 6px 0 14px; line-height: 1.4; }
+.seg {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.seg-btn {
+  flex: 1;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.seg-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.modal-input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 0 12px;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+}
+.modal-input:focus { border-color: var(--accent); }
+.jm-preview {
+  margin: 12px 0;
+  padding: 10px 12px;
+  background: var(--bg-elevated, #1c1c1e);
+  border-radius: 9px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: var(--accent, #4f8cff);
+  word-break: break-all;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.modal-btn {
+  flex: 1;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.modal-btn.accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+.modal-btn.ghost { color: var(--text-secondary); }
+.modal-btn:active { transform: scale(0.97); }
+.modal-set {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.modal-set-title {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.modal-set-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modal-set-row .modal-url { flex: 1; }
+.modal-url {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 0 10px;
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+.modal-url:focus { border-color: var(--accent); }
+.modal-btn.small {
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 14px;
+  align-self: flex-end;
+  background: var(--bg-input);
+}
+.jm-result {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+.jm-result.ok { background: rgba(52,199,89,0.12); color: #4ade80; border: 1px solid rgba(52,199,89,0.3); }
+.jm-result.err { background: rgba(255,159,10,0.12); color: #ffb454; border: 1px solid rgba(255,159,10,0.3); }
+
+/* ═══ Toast ═══ */
+.fn-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(20,20,22,0.94);
+  color: #fff;
+  font-size: 13px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  max-width: 80vw;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 1000;
+}
+.fn-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}

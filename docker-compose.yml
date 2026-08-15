@@ -1,0 +1,24 @@
+services:
+  comic-reader:
+    build: .
+    container_name: comic-reader
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PORT: 3000
+      COMICS_DIR: /comics
+      DATA_DIR: /app/data
+      # 留空则首次启动自动生成 JWT 密钥并写入 DATA_DIR/.jwt-secret（挂卷后持久化）
+      JWT_SECRET: "${JWT_SECRET:-}"
+      # 在线源：默认不启用。需要时在外层 .env 设置 ONLINE_SOURCE=jm 开启（见 lib/sources/）
+      ONLINE_SOURCE: "${ONLINE_SOURCE:-}"
+      # 可选：小说目录（不设则不显示「小说」库）
+      NOVEL_DIR: "${NOVEL_DIR:-}"
+    volumes:
+      # 把你的漫画目录挂到这里；或改成绝对路径，例如 /mnt/comics:/comics
+      - ./comics:/comics
+      - comic-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  comic-data:

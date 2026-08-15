@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log*
+.git
+.env
+data
+comics
+app.tar.gz
+backup_*
+Dockerfile
+docker-compose.yml
+README.md
+.dockerignore
+.gitignore
+*.md

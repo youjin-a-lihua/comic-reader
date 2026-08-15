@@ -1,0 +1,16 @@
+{
+  "name": "鸽子漫画",
+  "short_name": "鸽子漫画",
+  "description": "fnOS 漫画与小说阅读器",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    { "src": "/assets/icon_256.png", "sizes": "256x256", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

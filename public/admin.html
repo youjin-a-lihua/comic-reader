@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>管理后台 — 漫画阅读器</title>
+<link rel="stylesheet" href="/css/fnos-theme.css">
+<style>
+.admin-container { max-width:640px; margin:48px auto; padding:24px; }
+.admin-card { background:rgba(22,22,30,0.7); border:1px solid rgba(255,255,255,0.07); border-radius:16px; padding:28px; margin-bottom:20px; }
+.admin-card h2 { font-size:17px; margin-bottom:16px; color:#f5f5f7; }
+.admin-card h3 { font-size:15px; color:#98989d; margin:16px 0 12px; }
+.form-row { display:flex; gap:10px; margin-bottom:10px; }
+.form-row input, .form-row select { flex:1; height:40px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:0 12px; font-size:13px; color:#f5f5f7; font-family:var(--font); outline:none; }
+.form-row input:focus { border-color:rgba(94,92,230,0.5); }
+.btn { padding:8px 20px; border-radius:10px; border:none; cursor:pointer; font-size:13px; font-weight:500; font-family:var(--font); white-space:nowrap; }
+.btn-primary { background:var(--accent); color:#fff; }
+.btn-danger { background:rgba(255,69,58,0.12); color:#ff453a; }
+.btn-back { background:transparent; color:#98989d; text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-size:14px; margin-bottom:20px; }
+.btn-back:hover { color:#f5f5f7; }
+.user-list { list-style:none; }
+.user-list li { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-radius:10px; margin-bottom:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); gap:8px; flex-wrap:wrap; }
+.user-info { display:flex; align-items:center; gap:8px; }
+.role-badge { font-size:10px; padding:2px 8px; border-radius:4px; }
+.role-admin { background:rgba(94,92,230,0.15); color:#5e5ce6; }
+.role-user { background:rgba(255,255,255,0.06); color:#98989d; }
+.user-actions { display:flex; gap:6px; }
+.user-actions button { padding:3px 10px; font-size:11px; }
+.msg { font-size:12px; padding:6px 0; }
+.msg-error { color:#ff453a; }
+.msg-ok { color:#30d158; }
+.lib-list li { padding:10px 14px; border-radius:10px; margin-bottom:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.lib-path { font-size:12px; color:#98989d; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+</style>
+</head>
+<body>
+<div class="admin-container">
+<a class="btn-back" href="/app">← 返回书架</a>
+
+<!-- 用户管理 -->
+<div class="admin-card">
+<h2>用户管理</h2>
+<div class="form-row">
+<input type="text" id="newUser" placeholder="用户名"><input type="password" id="newPass" placeholder="密码">
+<button class="btn btn-primary" onclick="addUser()">添加</button>
+</div>
+<div class="msg" id="addMsg"></div>
+<ul class="user-list" id="userList"></ul>
+</div>
+
+<!-- 库管理 -->
+<div class="admin-card">
+<h2>库管理 <span style="font-size:12px;color:#636368;font-weight:400">（存储路径）</span></h2>
+<div class="form-row">
+<input type="text" id="newLibPath" placeholder="/comics">
+<input type="text" id="newLibName" placeholder="库名称（如：日漫）">
+<button class="btn btn-primary" onclick="addLib()">添加库</button>
+</div>
+<div class="msg" id="libMsg"></div>
+<ul class="lib-list" id="libList"></ul>
+</div>
+
+<!-- 自动解密 -->
+<div class="admin-card">
+<h2>自动解密 JM 加密漫画 <span style="font-size:12px;color:#636368;font-weight:400">（默认关闭）</span></h2>
+<p style="font-size:12px;color:#98989d;margin:0 0 14px;line-height:1.6">
+  部分 JM 漫画 PDF 被加密，浏览器 pdf.js 无法打开且缺封面。开启后，阅读器会定时把仍为加密的 PDF
+  原地解密（保留 <code style="font-size:11px">.enc.bak</code> 备份），解密后即可正常阅读并自动生成封面。
+</p>
+<div class="form-row" style="align-items:center">
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1">
+    <input type="checkbox" id="autoDecrypt" onchange="saveSettings()" style="width:18px;height:18px;flex:none">
+    <span>启用自动解密</span>
+  </label>
+</div>
+<div class="form-row">
+  <input type="text" id="decryptPassword" placeholder="加密密码（默认 11110000）" autocomplete="off">
+  <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+</div>
+<div class="msg" id="decryptMsg"></div>
+</div>
+
+<!-- 删除漫画 -->
+<div class="admin-card">
+<h2>允许删除漫画 <span style="font-size:12px;color:#636368;font-weight:400">（默认关闭 · 高危）</span></h2>
+<p style="font-size:12px;color:#98989d;margin:0 0 14px;line-height:1.6">
+  开启后，管理员在书架长按漫画（或进入详情）可出现「删除漫画」按钮，一键彻底删除该漫画的
+  <b>文件本体、封面与全部元数据（进度/收藏/浏览/点赞/评论/书架）</b>。此操作不可恢复，请谨慎开启。
+</p>
+<div class="form-row" style="align-items:center">
+  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1">
+    <input type="checkbox" id="allowDeleteComic" onchange="saveSettings()" style="width:18px;height:18px;flex:none">
+    <span>启用一键删除漫画</span>
+  </label>
+</div>
+<div class="msg" id="deleteMsg"></div>
+</div>
+</div>
+
+<script>
+var API=location.origin;
+function tk(){ return localStorage.getItem('fn_comic_token'); }
+async function api(path,opts){
+ opts=opts||{}; opts.headers=Object.assign({Authorization:'Bearer '+tk()},opts.headers||{});
+ if(opts.body&&typeof opts.body=='object'){ opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(opts.body); }
+ var r=await fetch(API+path,opts);
+ if(r.status==401){ localStorage.clear(); location.href='/'; throw new Error('expired'); }
+ return r;
+}
+
+// Users
+async function loadUsers(){
+ try{
+  var r=await api('/api/admin/users'); var users=await r.json();
+  document.getElementById('userList').innerHTML=users.map(function(u){
+   return '<li><div class="user-info"><span>'+esc(u.username)+'</span><span class="role-badge '+(u.role=='admin'?'role-admin':'role-user')+'">'+u.role+'</span></div>'+
+    '<div class="user-actions"><button class="btn btn-primary" onclick="setRole(\''+u.username+'\',\''+(u.role=='admin'?'user':'admin')+'\')">'+(u.role=='admin'?'降为用户':'设为管理员')+'</button>'+
+    '<button class="btn btn-danger" onclick="resetPwd(\''+u.username+'\')">重置密码</button>'+
+    (u.role!='admin'?'<button class="btn btn-danger" onclick="delUser(\''+u.username+'\')">删除</button>':'')+'</div></li>';
+  }).join('');
+ }catch(e){}
+}
+async function addUser(){ var u=document.getElementById('newUser').value.trim(), p=document.getElementById('newPass').value;
+ if(!u||!p){ showMsg('addMsg','请输入用户名和密码',1); return; }
+ var r=await api('/api/admin/users',{method:'POST',body:{username:u,password:p}});
+ var d=await r.json();
+ if(r.ok){ showMsg('addMsg','已添加: '+u,0); loadUsers(); document.getElementById('newUser').value=''; document.getElementById('newPass').value=''; }
+ else showMsg('addMsg',d.error,1);
+}
+async function delUser(u){ if(!confirm('删除 '+u+'？')) return;
+ var r=await api('/api/admin/users/'+encodeURIComponent(u),{method:'DELETE'}); var d=await r.json();
+ if(r.ok) loadUsers(); else showMsg('addMsg',d.error,1);
+}
+async function resetPwd(u){ var p=prompt('为 '+u+' 设置新密码：'); if(!p) return;
+ var r=await api('/api/admin/users/'+encodeURIComponent(u)+'/password',{method:'PUT',body:{newPassword:p}});
+ var d=await r.json(); alert(d.success?'已重置':d.error);
+}
+async function setRole(u,role){
+ var r=await api('/api/admin/users/'+encodeURIComponent(u)+'/role',{method:'PUT',body:{role:role}});
+ var d=await r.json();
+ if(r.ok) loadUsers(); else showMsg('addMsg',d.error,1);
+}
+
+// Libraries (Emby-style storage path management)
+async function loadLibs(){
+ try{
+  var r=await api('/api/admin/libraries'); var libs=await r.json();
+  document.getElementById('libList').innerHTML=libs.map(function(l){
+   return '<li><span class="lib-path">'+esc(l.path)+'</span><span style="font-size:12px;color:#636368">'+esc(l.name||'未命名')+'</span>'+
+    '<button class="btn btn-danger" style="padding:3px 10px;font-size:11px" onclick="delLib('+l.id+')">删除</button></li>';
+  }).join('');
+ }catch(e){}
+}
+async function addLib(){ var path=document.getElementById('newLibPath').value.trim(), name=document.getElementById('newLibName').value.trim();
+ if(!path){ showMsg('libMsg','请输入路径',1); return; }
+ var r=await api('/api/admin/libraries',{method:'POST',body:{path:path,name:name||path.split('/').pop()}});
+ var d=await r.json();
+ if(r.ok){ showMsg('libMsg','已添加',0); loadLibs(); document.getElementById('newLibPath').value=''; document.getElementById('newLibName').value=''; }
+ else showMsg('libMsg',d.error,1);
+}
+async function delLib(id){ if(!confirm('删除此库？')) return;
+ var r=await api('/api/admin/libraries/'+id,{method:'DELETE'});
+ if(r.ok) loadLibs();
+}
+
+// 自动解密设置
+async function loadSettings(){
+ try{
+  var r=await api('/api/admin/settings'); var s=await r.json();
+  document.getElementById('autoDecrypt').checked = !!s.autoDecrypt;
+  document.getElementById('decryptPassword').value = s.decryptPassword || '';
+  document.getElementById('allowDeleteComic').checked = !!s.allowDeleteComic;
+ }catch(e){}
+}
+async function saveSettings(){
+ var autoDecrypt=document.getElementById('autoDecrypt').checked;
+ var decryptPassword=document.getElementById('decryptPassword').value;
+ var allowDeleteComic=document.getElementById('allowDeleteComic').checked;
+ try{
+  var r=await api('/api/admin/settings',{method:'POST',body:{autoDecrypt:autoDecrypt,decryptPassword:decryptPassword,allowDeleteComic:allowDeleteComic}});
+  var d=await r.json();
+  if(r.ok){ showMsg('decryptMsg', autoDecrypt?'已开启自动解密，正在后台解密加密漫画':'已关闭自动解密',0);
+           showMsg('deleteMsg', allowDeleteComic?'已开启一键删除漫画（长按漫画或进详情即可删除）':'已关闭一键删除漫画',0); }
+  else showMsg('decryptMsg', d.error, 1);
+ }catch(e){ showMsg('decryptMsg','保存失败',1); }
+}
+
+function showMsg(id,text,err){ var el=document.getElementById(id); el.textContent=text; el.className='msg '+(err?'msg-error':'msg-ok'); }
+function esc(s){ var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+loadUsers(); loadLibs(); loadSettings();
+</script>
+</body>
+</html>

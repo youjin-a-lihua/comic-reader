@@ -6,9 +6,3 @@ data
 comics
 app.tar.gz
 backup_*
-Dockerfile
-docker-compose.yml
-README.md
-.dockerignore
-.gitignore
-*.md

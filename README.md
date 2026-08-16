@@ -100,6 +100,8 @@ module.exports = {
 
 图片代理（`lib/online-image.js`）负责 SSRF 防护、下载、LRU 缓存；多源时按各启用源的 `parseImageUrl` 识别图片归属并派发对应源的 `decodeImage`。
 
+> 📘 在线模块的完整技术文档（API 参考、图片代理、如何新增一个源、故障排查）：见 **[`ONLINE_SOURCES.md`](./ONLINE_SOURCES.md)**。
+
 ---
 
 ## 📁 目录结构

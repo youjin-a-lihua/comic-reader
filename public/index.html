@@ -204,9 +204,10 @@
       </div>
       <div class="search-actions">
         <button class="action-btn accent" onclick="onlineSearch(1)">🔍 在线搜索</button>
+        <select id="onlineSourceSelect" class="source-select" style="display:none" onchange="onOnlineSourceChange()"></select>
       </div>
       <div id="onlineInitial" class="search-initial">
-        <p style="color:var(--muted,#888);text-align:center;padding:30px 12px;font-size:13px;line-height:1.8;">输入关键词搜索禁漫天堂<br>结果在线阅读，无需下载</p>
+        <p style="color:var(--muted,#888);text-align:center;padding:30px 12px;font-size:13px;line-height:1.8;">输入关键词搜索已启用的在线源<br>结果在线阅读，无需下载</p>
       </div>
       <div id="onlineLoading" style="display:none;text-align:center;padding:30px;color:var(--muted,#888);">搜索中…</div>
       <div id="onlineResults" class="search-results" style="display:none">

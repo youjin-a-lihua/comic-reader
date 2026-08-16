@@ -114,3 +114,15 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
   body[data-layout="pragmatic"] .manga-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 20px 12px; }
   .bottom-nav { width: 90%; justify-content: space-between; bottom: 20px; padding: 10px 16px; }
 }
+.manga-cover-wrap { position: relative; }
+.source-select {
+  background: var(--surface, #1f2430); color: var(--text, #eee);
+  border: 1px solid rgba(127,127,127,.3); border-radius: 10px;
+  padding: 6px 10px; font-size: 13px; max-width: 150px; margin-left: 8px;
+}
+.online-src-badge {
+  position: absolute; top: 4px; left: 4px;
+  background: rgba(0,0,0,.6); color: #fff; font-size: 10px;
+  padding: 1px 5px; border-radius: 6px; line-height: 1.4;
+}
+}

@@ -954,67 +954,79 @@ app.get('/api/comic/:id/likes', authMiddleware, async (req, res) => {
   });
 });
 
-// ── 在线模块（可插拔源，默认关闭，见 lib/sources）：搜索 / 详情 / 章节 ──
-// 在线模块默认不注册、需通过 ONLINE_SOURCE 手动开启
-function ensureOnlineSource(res) {
-  const source = onlineSources.getActiveSource();
-  if (!source) {
-    res.status(403).json({ error: '在线漫画模块未启用：请在环境变量中设置 ONLINE_SOURCE=jm 并重启服务' });
-    return null;
-  }
-  return source;
-}
+// ── 在线模块（可插拔多源，默认全关，见 lib/sources/sources.json）：搜索 / 详情 / 章节 ──
+// 已启用源由 ONLINE_SOURCE 决定（逗号列表 / all / 不设置则用 enabledByDefault）。
+
+// 已启用源列表（前端渲染源切换器）
+app.get('/api/online/sources', authMiddleware, (req, res) => {
+  const enabled = onlineSources.getEnabled();
+  res.json({
+    enabled: onlineSources.isEnabled(),
+    sources: enabled.map(s => ({ key: s.key, name: s.name, description: s.description })),
+  });
+});
 
 // 在线模块状态（前端据此决定是否展示「未启用」提示，无需先触发搜索）
 app.get('/api/online/status', authMiddleware, async (req, res) => {
   res.json({
     enabled: onlineSources.isEnabled(),
     source: onlineSources.getActiveName(),
-    available: onlineSources.listSources()
+    available: onlineSources.listSources(),
   });
 });
 
+// 搜索：跨所有已启用源并发查询并合并；每条结果打上 _source 标记以便后续路由
 app.get('/api/online/search', authMiddleware, async (req, res) => {
-  const source = ensureOnlineSource(res);
-  if (!source) return;
+  const enabled = onlineSources.getEnabled();
+  if (!enabled.length) {
+    return res.status(403).json({ error: '在线漫画模块未启用：请在环境变量中设置 ONLINE_SOURCE=jm 并重启服务' });
+  }
   const q = (req.query.q || '').trim();
   if (!q) return res.json({ total: 0, maxPage: 0, comics: [] });
   const order = (req.query.order || 'mr').toString();
   const page = parseInt(req.query.page, 10) || 1;
-  try {
-    const r = await source.search(q, order, page);
-    res.json(r);
-  } catch (err) {
-    console.error('[online/search]', err.message);
-    res.status(502).json({ error: '在线搜索失败：' + (err.message || err) });
-  }
+  const merged = [];
+  await Promise.allSettled(enabled.map(async s => {
+    try {
+      const r = await s.impl.search(q, order, page);
+      if (r && Array.isArray(r.comics)) {
+        for (const c of r.comics) { c._source = s.key; merged.push(c); }
+      }
+    } catch (err) {
+      console.error(`[online/search:${s.key}]`, err.message);
+    }
+  }));
+  res.json({ total: merged.length, maxPage: 1, comics: merged });
 });
 
+// 详情：按 ?source= 选择源（缺省用首个启用源）
 app.get('/api/online/album/:id', authMiddleware, async (req, res) => {
-  const source = ensureOnlineSource(res);
-  if (!source) return;
+  const source = onlineSources.getSource(req.query.source) || onlineSources.getActiveSource();
+  if (!source) return res.status(403).json({ error: '在线漫画模块未启用' });
   try {
     const r = await source.album(req.params.id);
-    res.json(r);
+    if (r) r._source = req.query.source || onlineSources.getActiveName();
+    res.json(r || {});
   } catch (err) {
     console.error('[online/album]', err.message);
     res.status(502).json({ error: '获取详情失败：' + (err.message || err) });
   }
 });
 
+// 章节：按 ?source= 选择源
 app.get('/api/online/chapter/:id', authMiddleware, async (req, res) => {
-  const source = ensureOnlineSource(res);
-  if (!source) return;
+  const source = onlineSources.getSource(req.query.source) || onlineSources.getActiveSource();
+  if (!source) return res.status(403).json({ error: '在线漫画模块未启用' });
   try {
     const r = await source.chapter(req.params.id);
-    res.json(r);
+    res.json(r || {});
   } catch (err) {
     console.error('[online/chapter]', err.message);
     res.status(502).json({ error: '获取章节失败：' + (err.message || err) });
   }
 });
 
-// ── 在线图片代理（通用：拉取 + 当前源还原，绕过防盗链） ──
+// ── 在线图片代理（通用：拉取 + 按 URL 自动路由到认得它的源做还原，绕过防盗链） ──
 // 前端 <img> 直接引用本端点即可显示还原后的图片，无需自己处理 Referer/乱序。
 app.get('/api/online/img', authMiddleware, async (req, res) => {
   const url = (req.query.url || '').trim();

@@ -60,16 +60,26 @@ docker run -d -p 3000:3000 \
 | `COMICS_DIR` | `/comics` | 本地漫画根目录（挂载卷） |
 | `DATA_DIR` | `/app/data` | 运行时数据目录（挂卷持久化） |
 | `JWT_SECRET` | 空 | 留空则首次启动自动生成并写入 `DATA_DIR/.jwt-secret`；也可填 ≥32 字符固定串 |
-| `ONLINE_SOURCE` | 空（默认关闭） | 当前启用的在线源；留空则**不启用任何在线源**，设为 `jm` 才开启示例源（见 `lib/sources/`） |
+| `ONLINE_SOURCE` | 空（默认关闭） | 启用的在线源；留空则**不启用任何在线源**。可设为单个（`jm`）、逗号/空格分隔的多个（`jm,kavita`），或 `all` 启用清单里全部（见 `lib/sources/sources.json`）。前端「在线」tab 会自动列出已启用源并提供切换器，搜索会跨所有已启用源聚合结果。 |
 | `NOVEL_DIR` | 空 | 小说目录绝对路径；不设则不显示「小说」库 |
 
 ---
 
 ## 🧩 在线源插拔架构
 
-> **默认关闭**：仓库内置 `jm`（禁漫天堂）作为示例源，但**默认不注册、不启用**。部署者需在环境变量中显式设置 `ONLINE_SOURCE=jm` 才会开启；留空则在线模块完全关闭（搜索/详情/图片代理均返回「未启用」提示）。这是「可插拔源」的设计——仓库不默认打开任何第三方站点，是否启用、启用哪一个完全由你决定。
+> **默认关闭**：仓库内置 `jm`（禁漫天堂）作为示例源，但**默认不注册、不启用**。部署者需在环境变量中显式设置 `ONLINE_SOURCE=jm` 才会开启；留空则在线模块完全关闭（搜索/详情/图片代理均返回「未启用」提示）。这是「可插拔源」的设计——仓库不默认打开任何第三方站点，是否启用、启用哪些完全由你决定。
 
-在线模块与具体站点解耦。`server.js` 只通过 `lib/sources` 注册表调用当前源，站点协议封装在各源文件里。
+在线模块与具体站点解耦。`server.js` 只通过 `lib/sources` 注册表调用源，站点协议封装在各源文件里，**新增/启用源只改清单，无需改 `server.js`**。
+
+**源清单**（`lib/sources/sources.json`，列出所有可用源 + 元信息）：
+
+```json
+[
+  { "key": "jm", "name": "禁漫天堂", "file": "jm.js", "enabledByDefault": false, "description": "示例在线源，需手动启用" }
+]
+```
+
+**启用哪些源**由 `ONLINE_SOURCE` 决定：不设置（仅 `enabledByDefault:true` 的源，当前无）→ 单个 `jm` → 多个 `jm,kavita` → `all` 启用清单全部。前端「在线」tab 会据 `/api/online/sources` 自动列出已启用源并提供切换器，搜索时跨所有已启用源并发聚合结果。
 
 **统一接口**（参考 `lib/sources/jm.js`）：
 
@@ -82,13 +92,13 @@ module.exports = {
   chapter(epId),                    // -> { epId, images:[url...] }
   getCoverUrl(id), getImageUrl(epId, name),   // 可选
   decodeImage(buffer, parsed),      // 把拉到的原始图还原为可显示图；无操作则返回原 buffer
-  parseImageUrl(u),                 // 解析该源图片 URL -> { kind, epId?, pictureName?, isGif } 或 null
+  parseImageUrl(u),                 // 解析该源图片 URL -> { kind, epId?, pictureName?, isGif } 或 null（图片代理据此自动路由解码者）
 };
 ```
 
-**新增一个源**：在 `lib/sources/` 下新建文件实现上述接口，再到 `lib/sources/index.js` 的 `registerSource('xxx', require('./xxx'))` 注册即可，无需改动 `server.js`。前端通过 `ONLINE_SOURCE=xxx` 切换。
+**新增一个源**：在 `lib/sources/` 下新建文件实现上述接口，再到 `lib/sources/sources.json` 加一项（`key`/`name`/`file`/`enabledByDefault`）即可。前端、后端、图片代理都会自动适配，无需改动其他代码。
 
-图片代理（`lib/online-image.js`）负责 SSRF 防护、下载、LRU 缓存，并把解码派发给当前源的 `decodeImage`。
+图片代理（`lib/online-image.js`）负责 SSRF 防护、下载、LRU 缓存；多源时按各启用源的 `parseImageUrl` 识别图片归属并派发对应源的 `decodeImage`。
 
 ---
 
@@ -97,7 +107,7 @@ module.exports = {
 ```
 server.js              Express 服务入口
 lib/
-  sources/             ★ 在线源（可插拔）：jm.js 为示例实现，index.js 为注册表
+  sources/             ★ 在线源（可插拔、多源）：jm.js 为示例实现，sources.json 为源清单，index.js 为注册表（按清单自动加载）
   online-image.js      通用图片代理（SSRF + 下载 + 缓存 + 派发解码）
   scanner/cbz/epub/... 本地库扫描与解析
   progress/auth/...    进度、账号、书架等

@@ -193,6 +193,7 @@ async function checkOnlineStatus() {
         <span style="opacity:.7;font-size:12px;">详见 README「在线源（可插拔）」</span>
       </p>`;
     }
+    populateOnlineSources();
   } catch { /* 拉取失败时不改变既有状态 */ }
 }
 
@@ -1638,10 +1639,38 @@ let currentOnlinePage = 1;
 let currentOnlineKeyword = '';
 let currentOnlineMaxPage = 1;
 let currentOnlineOrder = 'mr';
+let currentOnlineSource = ''; // 当前选中的在线源 key（用于 album/chapter/img 路由）
 
-// jm 图片走代理，统一加 token
+function populateOnlineSources() {
+  const sel = document.getElementById('onlineSourceSelect');
+  if (!sel) return;
+  // 从 /api/online/sources 拉取已启用源列表
+  api('/api/online/sources').then(async res => {
+    const data = await res.json().catch(() => ({ sources: [] }));
+    const list = (data.sources || []);
+    sel.innerHTML = list.map(s => `<option value="${escHtml(s.key)}">${escHtml(s.name)}</option>`).join('');
+    if (list.length > 1) {
+      sel.style.display = 'inline-block';
+      if (!currentOnlineSource || !list.find(s => s.key === currentOnlineSource)) {
+        currentOnlineSource = list[0].key;
+      }
+      sel.value = currentOnlineSource;
+    } else {
+      sel.style.display = 'none';
+      currentOnlineSource = list.length ? list[0].key : '';
+    }
+  }).catch(() => { /* 拉取失败不影响其余功能 */ });
+}
+
+function onOnlineSourceChange() {
+  const sel = document.getElementById('onlineSourceSelect');
+  if (sel) currentOnlineSource = sel.value;
+}
+
+// 在线图片走代理，统一加 token 与 source（source 缺省时由后端按 URL 自动路由）
 function onlineImgUrl(rawUrl) {
-  return `/api/online/img?url=${encodeURIComponent(rawUrl)}&token=${encodeURIComponent(getToken())}`;
+  const src = currentOnlineSource ? `&source=${encodeURIComponent(currentOnlineSource)}` : '';
+  return `/api/online/img?url=${encodeURIComponent(rawUrl)}&token=${encodeURIComponent(getToken())}${src}`;
 }
 
 function onOnlineSearchInput() {
@@ -1707,10 +1736,13 @@ function renderOnlineCard(c) {
   const title = c.title || '';
   const author = c.author || '';
   const cover = c.cover ? onlineImgUrl(c.cover) : '';
-  return `<div class="manga-card" onclick="onlineOpenAlbum('${escHtml(c.id)}')">
+  const src = c._source || currentOnlineSource || '';
+  const badge = src ? `<span class="online-src-badge">${escHtml(src)}</span>` : '';
+  return `<div class="manga-card" onclick="onlineOpenAlbum('${escHtml(c.id)}','${escHtml(src)}')">
     <div class="manga-cover-wrap">
       ${cover ? `<img src="${cover}" class="manga-cover" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=placeholder-cover>📖</div>'">`
         : `<div class="placeholder-cover">${escHtml(title.slice(0, 2))}</div>`}
+      ${badge}
     </div>
     <div class="manga-meta-wrapper">
       <div class="title">${escHtml(title)}</div>
@@ -1719,13 +1751,15 @@ function renderOnlineCard(c) {
   </div>`;
 }
 
-async function onlineOpenAlbum(id) {
+async function onlineOpenAlbum(id, source) {
+  if (source) currentOnlineSource = source;
   detailBackPage = 'online';
   const el = document.getElementById('detailContent');
   if (el) el.innerHTML = '<div class="profile-loading">加载中…</div>';
   switchPage('detail');
   try {
-    const res = await api(`/api/online/album/${encodeURIComponent(id)}`);
+    const qs = currentOnlineSource ? `?source=${encodeURIComponent(currentOnlineSource)}` : '';
+    const res = await api(`/api/online/album/${encodeURIComponent(id)}${qs}`);
     const data = await res.json();
     if (!res.ok) { if (el) el.innerHTML = `<div class="empty-state"><p>${escHtml(data.error || '加载失败')}</p></div>`; return; }
     renderOnlineDetail(data);
@@ -1736,12 +1770,13 @@ async function onlineOpenAlbum(id) {
 }
 
 function renderOnlineDetail(a) {
+  if (a._source) currentOnlineSource = a._source;
   const cover = a.cover ? onlineImgUrl(a.cover) : '';
   const tags = [].concat(a.tags && a.tags.author || [], a.tags && a.tags.tags || [], a.tags && a.tags.works || [], a.tags && a.tags.actors || []);
   const tagHtml = tags.map(t => `<span class="detail-tag">${escHtml(t)}</span>`).join('');
   const chapters = a.chapters || [];
   const chapterHtml = chapters.map(ch => `
-    <div class="volume-item" onclick="onlineOpenChapter('${escHtml(ch.id)}','${escHtml(a.title).replace(/'/g, "\\'")}','${escHtml(ch.title).replace(/'/g, "\\'")}')">
+    <div class="volume-item" onclick="onlineOpenChapter('${escHtml(ch.id)}','${escHtml(a.title).replace(/'/g, "\\'")}','${escHtml(ch.title).replace(/'/g, "\\'")}','${escHtml(a._source || '')}')">
       <div class="volume-info">
         <div class="volume-name">${escHtml(ch.title)}</div>
       </div>
@@ -1758,7 +1793,7 @@ function renderOnlineDetail(a) {
         ${a.likes ? `<div class="detail-sub">❤ ${a.likes}</div>` : ''}
         ${a.updateDate ? `<div class="detail-sub">更新：${escHtml(a.updateDate)}</div>` : ''}
         ${tagHtml ? `<div class="detail-tags">${tagHtml}</div>` : ''}
-        <button class="detail-start" onclick="onlineOpenChapter('${escHtml(chapters[0] ? chapters[0].id : a.id)}','${escHtml(a.title).replace(/'/g, "\\'")}','${escHtml(chapters[0] ? chapters[0].title : '第1話').replace(/'/g, "\\'")}')">开始阅读</button>
+        <button class="detail-start" onclick="onlineOpenChapter('${escHtml(chapters[0] ? chapters[0].id : a.id)}','${escHtml(a.title).replace(/'/g, "\\'")}','${escHtml(chapters[0] ? chapters[0].title : '第1話').replace(/'/g, "\\'")}','${escHtml(a._source || '')}')">开始阅读</button>
       </div>
     </div>`;
   if (a.description) {
@@ -1773,9 +1808,11 @@ function renderOnlineDetail(a) {
   if (titleEl) titleEl.textContent = (a.title || '').length > 16 ? a.title.slice(0, 16) + '…' : (a.title || '');
 }
 
-async function onlineOpenChapter(epId, title, chapterTitle) {
+async function onlineOpenChapter(epId, title, chapterTitle, source) {
+  if (source) currentOnlineSource = source;
   try {
-    const res = await api(`/api/online/chapter/${encodeURIComponent(epId)}`);
+    const qs = currentOnlineSource ? `?source=${encodeURIComponent(currentOnlineSource)}` : '';
+    const res = await api(`/api/online/chapter/${encodeURIComponent(epId)}${qs}`);
     const data = await res.json();
     if (!res.ok) { toast(data.error || '章节加载失败'); return; }
     const images = data.images || [];
@@ -1785,6 +1822,7 @@ async function onlineOpenChapter(epId, title, chapterTitle) {
       name: chapterTitle && chapterTitle !== '第1話' ? `${title} ${chapterTitle}` : title,
       ext: 'cbz',
       online: true,
+      source: currentOnlineSource,
       images,
       pageCount: images.length,
     });

@@ -1,0 +1,9 @@
+[
+  {
+    "key": "jm",
+    "name": "禁漫天堂",
+    "file": "jm.js",
+    "enabledByDefault": false,
+    "description": "示例在线源，需手动启用（见 README「在线源（可插拔）」合规说明）。"
+  }
+]

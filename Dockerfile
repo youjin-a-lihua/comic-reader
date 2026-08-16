@@ -13,8 +13,10 @@ RUN npm install --omit=dev
 COPY . .
 
 # 默认漫画目录与数据目录（运行时用卷挂载持久化）
+# chmod 保证镜像内文件对所有用户可读，避免宿主机 umask 过严导致 COPY 后无读权限
 RUN mkdir -p /comics /app/data \
- && chown -R node:node /app /comics
+ && chown -R node:node /app /comics \
+ && chmod -R a+rX /app /comics
 
 ENV PORT=3000 \
     COMICS_DIR=/comics \

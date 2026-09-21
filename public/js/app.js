@@ -2648,6 +2648,10 @@ function updateLocalProgressAfterRead() {
 let _readerBackTimer = null;
 
 function ensureFloatingBackButton() {
+  /* 【2026-09-22 停用】悬浮返回胶囊与顶栏左上角 ← 功能重复、位置重叠（均在 16px 处），
+     iPhone 上表现为「两个回退键」；且它走 history.back()，无历史条目时不回退，
+     随后进入 .ghost 态（opacity 0.12）看似消失。全部停用，仅保留同名空实现以防调用报错。 */
+  return;
   let btn = document.getElementById('readerFloatingBack');
   if (!btn) {
     btn = document.createElement('button');
@@ -2697,5 +2701,8 @@ function ensureFloatingBackButton() {
 function removeFloatingBackButton() {
   clearTimeout(_readerBackTimer);
   const btn = document.getElementById('readerFloatingBack');
-  if (btn) btn.style.display = 'none';
+  /* 【2026-09-22】改为真正移除节点。原来只 display:none，残留节点会被后续代码
+     或旧逻辑重新显示，造成「点一次消失、再进又出现」。 */
+  if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
+  else if (btn) btn.style.display = 'none';
 }

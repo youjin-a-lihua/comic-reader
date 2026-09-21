@@ -393,3 +393,20 @@
   pointer-events: none !important;
   transition: opacity 0.15s ease-out !important;
 }
+
+/* ══════════════════════════════════════════════════════════
+   【2026-09-22】彻底禁用悬浮返回胶囊 .reader-floating-back
+   原因：它与顶栏左上角的 ← 功能重复且位置重叠（都在 16px 处），
+         在 iPhone 上表现为「两个回退键」，且悬浮键走 history.back()
+         在无历史条目时不回退、随后进入 .ghost 态看似消失。
+   JS 侧已移除 ensureFloatingBackButton() 的全部调用；
+   这里再加一层 CSS 兜底 —— 确保即使客户端仍在跑旧缓存 JS，
+   动态创建出来的胶囊节点也不会被渲染。
+   FLOATING-BACK-DISABLED
+   ══════════════════════════════════════════════════════════ */
+.reader-floating-back,
+#readerFloatingBack {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}

@@ -53,9 +53,9 @@
   .jm-detail-meta { font-size: 13px; line-height: 1.7; color: var(--text,#eee); }
   .jm-detail-line { white-space: pre-wrap; word-break: break-word; }
 </style>
-  <link rel="stylesheet" href="/css/fnos-theme.css?v=20260814q">
-  <link rel="stylesheet" href="/css/reader.css?v=20260814j">
-  <link rel="stylesheet" href="/css/detail.css?v=20260813r">
+  <link rel="stylesheet" href="/css/fnos-theme.css?v=20260910">
+  <link rel="stylesheet" href="/css/reader.css?v=20260910">
+  <link rel="stylesheet" href="/css/detail.css?v=20260910">
 </head>
 <body data-layout="spatial" data-theme="dark">
 
@@ -198,7 +198,7 @@
   <div id="page-online" class="page">
     <div class="page-content">
       <div class="search-bar">
-        <input id="onlineSearchInput" class="search-input" type="text" placeholder="搜索在线漫画（标题 / 作者）" autocomplete="off"
+        <input id="onlineSearchInput" class="search-input" type="text" placeholder="搜索禁漫天堂（标题 / 作者）" autocomplete="off"
           oninput="onOnlineSearchInput()" onkeydown="if(event.key==='Enter')onlineSearch(1)">
         <button id="onlineSearchClear" class="search-clear" onclick="clearOnlineSearch()" style="display:none" aria-label="清除">✕</button>
       </div>
@@ -207,7 +207,7 @@
         <select id="onlineSourceSelect" class="source-select" style="display:none" onchange="onOnlineSourceChange()"></select>
       </div>
       <div id="onlineInitial" class="search-initial">
-        <p style="color:var(--muted,#888);text-align:center;padding:30px 12px;font-size:13px;line-height:1.8;">输入关键词搜索已启用的在线源<br>结果在线阅读，无需下载</p>
+        <p style="color:var(--muted,#888);text-align:center;padding:30px 12px;font-size:13px;line-height:1.8;">输入关键词搜索禁漫天堂<br>结果在线阅读，无需下载</p>
       </div>
       <div id="onlineLoading" style="display:none;text-align:center;padding:30px;color:var(--muted,#888);">搜索中…</div>
       <div id="onlineResults" class="search-results" style="display:none">
@@ -272,17 +272,40 @@
       </div>
       <div class="modal-set">
         <div class="modal-set-title">AstrBot 配置（仅存服务端，不下发前端）</div>
-        <div class="modal-set-row">地址：<input type="text" id="jmUrl" class="modal-url" placeholder="http://你的AstrBot地址:6185"></div>
-        <div class="modal-set-row">账号：<input type="text" id="jmUser" class="modal-url" placeholder="如 admin"></div>
+        <div class="modal-set-row">地址：<input type="text" id="jmUrl" class="modal-url" placeholder="http://192.168.31.88:6185"></div>
+        <div class="modal-set-row">账号：<input type="text" id="jmUser" class="modal-url" placeholder="如 AKI"></div>
         <div class="modal-set-row">密码：<input type="password" id="jmPass" class="modal-url" placeholder="留空 = 不修改"></div>
         <button class="modal-btn small" onclick="saveJmConfig()">保存配置</button>
       </div>
     </div>
   </div>
   <div id="fnToast" class="fn-toast"></div>
-  <script src="/js/api.js?v=20260815b"></script>
-  <script src="/js/app.js?v=20260815b"></script>
-  <script src="/js/reader.js?v=20260815b"></script>
+
+  <!-- 在线批量下载：多选时的浮动操作条（默认隐藏） -->
+  <div id="selBar" style="display:none;position:fixed;left:16px;right:16px;bottom:calc(24px + env(safe-area-inset-bottom));z-index:900;align-items:center;gap:10px;padding:12px 14px;border-radius:16px;background:rgba(28,28,32,0.92);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);border:1px solid rgba(255,255,255,0.1);box-shadow:0 12px 36px rgba(0,0,0,0.5)">
+    <span style="flex:1;font-size:13.5px;color:rgba(255,255,255,0.75)">已选 <b id="selCount" style="color:#fff">0</b> 本</span>
+    <button onclick="exitSelMode()" style="padding:9px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.75);font-size:13.5px;cursor:pointer">取消</button>
+    <button onclick="openQueuePanel()" style="padding:9px 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.8);font-size:13.5px;cursor:pointer">📋 清单</button>
+    <button onclick="downloadQueue()" style="padding:9px 16px;border-radius:10px;border:none;background:#0A84FF;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer">⬇️ 下载</button>
+  </div>
+
+  <!-- 下载清单面板 -->
+  <div id="queueModal" class="modal-mask" style="display:none" onclick="if(event.target===this)closeQueuePanel()">
+    <div class="modal-box" style="max-width:460px">
+      <div class="modal-title">下载清单</div>
+      <div class="modal-sub">长按在线漫画卡片加入清单，攒够了一起下载到本地库。整本（全部章节）下载。</div>
+      <div id="queueBody" style="max-height:46vh;overflow-y:auto;margin:10px 0"></div>
+      <div class="modal-actions">
+        <button class="modal-btn ghost" onclick="closeQueuePanel()">关闭</button>
+        <button class="modal-btn ghost" onclick="clearQueue()">清空</button>
+        <button class="modal-btn accent" onclick="downloadQueue()">⬇️ 全部下载</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js?v=20260910g"></script>
+  <script src="/js/app.js?v=20260910g"></script>
+  <script src="/js/reader.js?v=20260910g"></script>
   <script>document.addEventListener('DOMContentLoaded', () => { initApp(); });</script>
 </body>
 </html>

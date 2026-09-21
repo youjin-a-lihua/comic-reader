@@ -457,3 +457,28 @@
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+
+/* ── 详情页返回按钮（悬浮左上角，高于顶部 header z-index:100） ── */
+.detail-back {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 9999;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(30,30,34,0.72);
+  color: #fff;
+  font-size: 22px;
+  line-height: 44px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, background .15s ease;
+}
+.detail-back:active { transform: scale(0.88); background: rgba(40,40,46,0.9); }
+
+.detail-back:active { transform: scale(0.9); background: rgba(0,0,0,0.75); }

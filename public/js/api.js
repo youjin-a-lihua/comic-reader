@@ -162,5 +162,33 @@ const ComicAPI = {
   async getAstrbotSession(sessionId) {
     const res = await api('/api/astrbot/session/' + encodeURIComponent(sessionId), { method: 'GET' });
     return res.json();
+  },
+
+  // 在线下载历史（持久化，重启不丢）
+  async getDownloads(limit, offset) {
+    const q = [];
+    if (limit) q.push('limit=' + encodeURIComponent(limit));
+    if (offset) q.push('offset=' + encodeURIComponent(offset));
+    const res = await api('/api/online/downloads' + (q.length ? '?' + q.join('&') : ''));
+    return res.json();
+  },
+
+  // 创建在线下载任务（批量时 episodes 传多个）
+  async startOnlineDownload(payload) {
+    const res = await api('/api/online/download', { method: 'POST', body: payload });
+    return { ok: res.ok, data: await res.json().catch(() => ({})) };
+  },
+
+  // 查询下载任务进度
+  async getDownloadJob(jobId) {
+    const res = await api('/api/online/download/' + encodeURIComponent(jobId));
+    return res.json();
+  },
+
+  // 在线相册详情（含 chapters 列表）——整本下载时先拿它
+  async getOnlineAlbum(id, source) {
+    const qs = source ? '?source=' + encodeURIComponent(source) : '';
+    const res = await api('/api/online/album/' + encodeURIComponent(id) + qs);
+    return res.json();
   }
 };

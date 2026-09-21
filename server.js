@@ -45,15 +45,32 @@ const { getSettings, saveSettings } = require('./lib/settings');
 const { autoDecryptOnce, startAutoDecryptScheduler } = require('./lib/autodecrypt');
 const { isEncryptedPdf, decryptPdfBuffer, decryptFileInPlace } = require('./lib/decrypt');
 const { getOnlineImage } = require('./lib/online-image');
+const { startDownload, getJob, publicJob, listHistory } = require('./lib/onlinedl');
+const audit = require('./lib/auditlog');
 const onlineSources = require('./lib/sources');
 
 const app = express();
+
+// 全局异步包装：Express ^4.21 不会捕获 async handler 的 rejection，
+// 异常会变成 unhandledRejection 且客户端永久挂起。此包装对所有 verb（含未来新增路由）自动生效。
+for (const verb of ['get', 'post', 'put', 'delete', 'patch', 'options', 'head', 'use']) {
+  const original = app[verb].bind(app);
+  app[verb] = (...args) => original(...args.map(h => (
+    (typeof h === 'function' && h.constructor && h.constructor.name === 'AsyncFunction')
+      ? (req, res, next) => Promise.resolve(h(req, res, next)).catch(next)
+      : h
+  )));
+}
+
 const PORT = process.env.PORT || 3000;
 const COMICS_DIR = process.env.COMICS_DIR || '/comics';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 
 installExitHooks();
+
+// 载入历史操作日志到内存环形（管理员页首次查询即可命中，无需读盘）
+audit.init().catch(e => console.error('[audit] init 失败:', e.message));
 
 // ── JWT 密钥持久化 ──────────────────────────────────
 // 原来是 crypto.randomBytes(32) 直接放内存，重启即失效。
@@ -161,18 +178,22 @@ setInterval(() => {
 
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body || {};
+  const ip = audit.clientIp(req);
   if (!username || !password) {
+    audit.record({ user: username || '-', ip, action: 'login', detail: '缺少用户名或密码', result: 'fail' });
     return res.status(400).json({ error: '请输入用户名和密码' });
   }
 
   const key = loginKey(req, username);
   if (isLocked(key)) {
+    audit.record({ user: username, ip, action: 'login', detail: '触发限速已锁定', result: 'blocked' });
     return res.status(429).json({ error: '登录尝试过于频繁，请 5 分钟后再试' });
   }
 
   const result = await authenticate(username, password);
   if (!result.success) {
     noteFail(key);
+    audit.record({ user: username, ip, action: 'login', detail: result.error || '密码错误', result: 'fail' });
     return res.status(401).json({ error: result.error || '登录失败' });
   }
   loginAttempts.delete(key);
@@ -183,6 +204,7 @@ app.post('/api/login', async (req, res) => {
     { expiresIn: '30d' }
   );
 
+  audit.record({ user: result.username, ip, action: 'login', detail: `角色 ${result.role}`, result: 'ok' });
   res.json({ token, user: { username: result.username, role: result.role } });
 });
 
@@ -318,7 +340,7 @@ app.get('/api/comic/:id/info', authMiddleware, async (req, res) => {
     } else if (comic.ext === 'epub') {
       pageCount = getToc(comic.path).length;
     } else {
-      pageCount = getImageList(comic.path).length;
+      pageCount = (await getImageList(comic.path)).length;
     }
   } catch (err) {
     console.error('[info] 页数统计失败:', err.message);
@@ -398,14 +420,14 @@ app.get('/api/comic/:id/page/:pageNum', authMiddleware, async (req, res) => {
   }
 
   try {
-    const images = getImageList(comic.path);
+    const images = await getImageList(comic.path);
     const pageNum = parseInt(req.params.pageNum, 10);
     if (!Number.isInteger(pageNum) || pageNum < 1 || pageNum > images.length) {
       return res.status(404).json({ error: '页码不存在' });
     }
 
     const entryName = images[pageNum - 1];
-    const buffer = extractImage(comic.path, entryName);
+    const buffer = await extractImage(comic.path, entryName);
     if (!buffer) return res.status(404).json({ error: '读取页面失败' });
 
     const ext = path.extname(entryName).toLowerCase();
@@ -590,7 +612,7 @@ async function deleteComicFully(comic) {
           const changed = Array.isArray(shelves) && shelves.some(s => s.items && s.items.includes(id));
           if (changed) {
             const next = shelves.map(s => s.items ? { ...s, items: s.items.filter(it => it !== id) } : s);
-            fs.writeFileSync(fp, JSON.stringify(next, null, 2), 'utf-8');
+            getStore(fp, []).set(next); // 原子写：tmp + rename，避免并发/崩溃截断书架文件
           }
         } catch (e) { /* 跳过损坏文件 */ }
       }
@@ -610,6 +632,11 @@ app.delete('/api/comic/:id', authMiddleware, adminOnly, async (req, res) => {
   const comic = await findComic(req.params.id);
   if (!comic) return res.status(404).json({ error: '漫画不存在' });
   const errors = await deleteComicFully(comic);
+  audit.record({
+    user: req.user.username, ip: audit.clientIp(req), action: 'delete-comic',
+    detail: comic.name + (errors.length ? ' | 部分失败: ' + errors.join('; ') : ''),
+    result: errors.length ? 'partial' : 'ok',
+  });
   if (errors.length) {
     return res.json({ success: true, partial: true, deleted: comic.name, warnings: errors });
   }
@@ -623,11 +650,28 @@ app.get('/api/admin/users', authMiddleware, adminOnly, async (req, res) => {
   res.json(listUsers());
 });
 
+// 操作日志查询（仅管理员）：默认最新在前，支持按账号/动作/结果过滤
+app.get('/api/admin/audit', authMiddleware, adminOnly, async (req, res) => {
+  const data = await audit.query({
+    limit: req.query.limit,
+    offset: req.query.offset,
+    user: req.query.user,
+    action: req.query.action,
+    result: req.query.result,
+  });
+  res.json({ ...data, actions: audit.actions() });
+});
+
 app.post('/api/admin/users', authMiddleware, adminOnly, async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: '缺少用户名或密码' });
   const { addUser } = require('./lib/auth');
   const result = addUser(username, password);
+  audit.record({
+    user: req.user.username, ip: audit.clientIp(req), action: 'add-user',
+    detail: `新增用户 ${username}` + (result.success ? '' : ` | 失败: ${result.error}`),
+    result: result.success ? 'ok' : 'fail',
+  });
   if (!result.success) return res.status(400).json({ error: result.error });
   res.json({ success: true, username });
 });
@@ -638,6 +682,11 @@ app.delete('/api/admin/users/:username', authMiddleware, adminOnly, async (req, 
   }
   const { removeUser } = require('./lib/auth');
   const result = removeUser(req.params.username);
+  audit.record({
+    user: req.user.username, ip: audit.clientIp(req), action: 'remove-user',
+    detail: `删除用户 ${req.params.username}` + (result.success ? '' : ` | 失败: ${result.error}`),
+    result: result.success ? 'ok' : 'fail',
+  });
   if (!result.success) return res.status(400).json({ error: result.error });
   res.json({ success: true });
 });
@@ -647,6 +696,11 @@ app.put('/api/admin/users/:username/password', authMiddleware, adminOnly, async 
   if (!newPassword) return res.status(400).json({ error: '缺少新密码' });
   const { resetPassword } = require('./lib/auth');
   const result = resetPassword(req.params.username, newPassword);
+  audit.record({
+    user: req.user.username, ip: audit.clientIp(req), action: 'reset-password',
+    detail: `重置 ${req.params.username} 的密码` + (result.success ? '' : ` | 失败: ${result.error}`),
+    result: result.success ? 'ok' : 'fail',
+  });
   if (!result.success) return res.status(400).json({ error: result.error });
   res.json({ success: true });
 });
@@ -655,6 +709,11 @@ app.put('/api/admin/users/:username/role', authMiddleware, adminOnly, async (req
   const { role } = req.body || {};
   const { setRole } = require('./lib/auth');
   const result = setRole(req.params.username, role);
+  audit.record({
+    user: req.user.username, ip: audit.clientIp(req), action: 'set-role',
+    detail: `将 ${req.params.username} 角色改为 ${role}` + (result.success ? '' : ` | 失败: ${result.error}`),
+    result: result.success ? 'ok' : 'fail',
+  });
   if (!result.success) return res.status(400).json({ error: result.error });
   res.json({ success: true });
 });
@@ -702,12 +761,18 @@ app.post('/api/admin/libraries', authMiddleware, adminOnly, async (req, res) => 
   const id = Math.max(0, ...libs.map(l => l.id)) + 1;
   libs.push({ id, path: libPath, name: name || libPath.split('/').filter(Boolean).pop() || libPath });
   writeLibs(libs);
+  audit.record({ user: req.user.username, ip: audit.clientIp(req), action: 'add-library', detail: libPath, result: 'ok' });
   res.json({ success: true, id });
 });
 
 app.delete('/api/admin/libraries/:id', authMiddleware, adminOnly, async (req, res) => {
+  const removed = readLibs().find(l => l.id === parseInt(req.params.id, 10));
   const libs = readLibs().filter(l => l.id !== parseInt(req.params.id, 10));
   writeLibs(libs);
+  audit.record({
+    user: req.user.username, ip: audit.clientIp(req), action: 'remove-library',
+    detail: removed ? `${removed.name} (${removed.path})` : `id=${req.params.id}`, result: 'ok',
+  });
   res.json({ success: true });
 });
 
@@ -724,6 +789,10 @@ app.post('/api/admin/settings', authMiddleware, adminOnly, async (req, res) => {
       .then(s => console.log(`[autodecrypt] 手动触发 扫描=${s.scanned} 解密=${s.decrypted} 失败=${s.failed}`))
       .catch(e => console.error('[autodecrypt] 手动触发失败:', e.message));
   }
+  audit.record({
+    user: req.user.username, ip: audit.clientIp(req), action: 'update-settings',
+    detail: JSON.stringify(req.body || {}).slice(0, 300), result: 'ok',
+  });
   res.json({ success: true, settings: updated });
 });
 
@@ -734,15 +803,42 @@ app.get('/api/library', authMiddleware, async (req, res) => {
     const forceRefresh = req.query.refresh === '1';
     const allComics = await scanAllLibs(forceRefresh);
 
-    const filtered = typeFilter ? allComics.filter(c => c.type === typeFilter) : allComics;
     const progress = getUserProgress(req.user.username);
+
+    // ── 条件请求（ETag / 304）──
+    // /api/library 响应体约 1.26MB，是首屏最大的传输项，且前端此前会重复拉多次。
+    // 这里用「扫描版本 + 用户 + 类型 + 结果规模 + 进度摘要」构造 ETag：命中即 304，
+    // 连 JSON 序列化都省掉。刻意不对完整响应体求 hash —— 那要先把 1MB 序列化出来，等于没省。
+    const progHash = crypto.createHash('md5').update(JSON.stringify(progress)).digest('hex').slice(0, 10);
+    const etag = `W/"lib-${_scanTime}-${req.user.username}-${typeFilter || 'all'}-${allComics.length}-${progHash}"`;
+    res.set('Cache-Control', 'no-cache');   // 允许缓存但每次回源校验
+    res.set('Vary', 'Authorization');       // 换账号必须换缓存桶，避免串数据
+    res.set('ETag', etag);
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+
+    const filtered = typeFilter ? allComics.filter(c => c.type === typeFilter) : allComics;
     const bookmarks = new Set(Object.entries(progress).filter(([, v]) => v && v.bookmarked).map(([id]) => id));
 
+    // 只下发前端真正消费的字段。path / relativePath / fullTitle / artists / genres /
+    // publishedAt / language / status / chapterCount 经前端全量 grep 确认零引用，
+    // 剔除后单条记录体积约降 29%（详见性能报告 §优化）。
     const decorate = c => ({
-      ...c,
+      id: c.id,
+      name: c.name,
+      ext: c.ext,
+      series: c.series,
+      type: c.type,
+      tags: c.tags || [],
+      authors: c.authors || [],
+      source: c.source || '',
+      sourceId: c.sourceId || '',
+      size: c.size,
+      pageCount: c.pageCount,
+      mtime: c.mtime,
+      isTranslated: !!c.isTranslated,
+      hasCover: hasCover(c.id, c.path),
       progress: progress[c.id] || null,
-      bookmarked: bookmarks.has(c.id),
-      hasCover: hasCover(c.id, c.path)
+      bookmarked: bookmarks.has(c.id)
     });
 
     const enriched = filtered.map(decorate);
@@ -986,17 +1082,20 @@ app.get('/api/online/search', authMiddleware, async (req, res) => {
   const order = (req.query.order || 'mr').toString();
   const page = parseInt(req.query.page, 10) || 1;
   const merged = [];
+  const maxPages = [];
   await Promise.allSettled(enabled.map(async s => {
     try {
       const r = await s.impl.search(q, order, page);
       if (r && Array.isArray(r.comics)) {
         for (const c of r.comics) { c._source = s.key; merged.push(c); }
+        if (r.maxPage) maxPages.push(r.maxPage);
       }
     } catch (err) {
       console.error(`[online/search:${s.key}]`, err.message);
     }
   }));
-  res.json({ total: merged.length, maxPage: 1, comics: merged });
+  // maxPage 取各源的最大值（原硬编码 1，多源或分页时前端永远认为只有 1 页）
+  res.json({ total: merged.length, maxPage: Math.max(1, ...maxPages), comics: merged });
 });
 
 // 详情：按 ?source= 选择源（缺省用首个启用源）
@@ -1041,6 +1140,71 @@ app.get('/api/online/img', authMiddleware, async (req, res) => {
     console.error('[online/img]', err.message);
     if (!res.headersSent) res.status(502).json({ error: '图片获取失败' });
   }
+});
+
+// ── 在线章节 → 本地库（异步下载任务：逐页拉图 → 合成 PDF → 原子入库）──
+// 在线阅读逐张走代理，慢且受源站可用性影响；下载入库后即可走本地 PDF 通道。
+// 任务异步执行：单章节可能上百页，同步请求必然超时，故用 job + 轮询。
+const ONLINE_DL_DIR = process.env.ONLINE_DOWNLOAD_DIR || COMICS_DIR;
+const ONLINE_DL_MAX_EPISODES = 200;
+
+app.post('/api/online/download', authMiddleware, async (req, res) => {
+  const body = req.body || {};
+  const srcKey = String(body.source || '').trim();
+  const source = onlineSources.getSource(srcKey) || onlineSources.getActiveSource();
+  if (!source) return res.status(403).json({ error: '在线漫画模块未启用' });
+
+  const rawEps = Array.isArray(body.episodes) ? body.episodes : [];
+  const episodes = rawEps
+    .map(e => ({
+      id: String((e && e.id) || '').trim(),
+      title: String((e && e.title) || '').trim(),
+    }))
+    .filter(e => e.id);
+  if (!episodes.length) return res.status(400).json({ error: '缺少 episodes（待下载章节列表）' });
+  if (episodes.length > ONLINE_DL_MAX_EPISODES) {
+    return res.status(400).json({ error: `一次最多下载 ${ONLINE_DL_MAX_EPISODES} 个章节` });
+  }
+
+  const albumTitle = String(body.albumTitle || '').trim() || episodes[0].title || episodes[0].id;
+
+  const started = startDownload({
+    source,
+    episodes,
+    albumTitle,
+    sourceKey: srcKey || onlineSources.getActiveName() || '',
+    sourceId: String(body.sourceId || '').trim(),
+    authors: Array.isArray(body.authors) ? body.authors.slice(0, 10).map(String) : [],
+    tags: Array.isArray(body.tags) ? body.tags.slice(0, 30).map(String) : [],
+    targetDir: ONLINE_DL_DIR,
+    user: req.user.username,
+    ip: audit.clientIp(req),
+  });
+  if (started.error) {
+    audit.record({
+      user: req.user.username, ip: audit.clientIp(req), action: 'online-download',
+      detail: `${albumTitle} × ${episodes.length} 话 | 失败: ${started.error}`, result: 'fail',
+    });
+    return res.status(429).json({ error: started.error });
+  }
+  audit.record({
+    user: req.user.username, ip: audit.clientIp(req), action: 'online-download',
+    detail: `${albumTitle} × ${episodes.length} 话（${srcKey || onlineSources.getActiveName() || 'source'}）`,
+    result: 'ok',
+  });
+  res.json({ ok: true, jobId: started.job.id, targetDir: ONLINE_DL_DIR });
+});
+
+// 下载历史（持久化，重启不丢）。注意这条必须放在 :jobId 之前，避免被它吞掉。
+app.get('/api/online/downloads', authMiddleware, (req, res) => {
+  res.json(listHistory({ limit: req.query.limit, offset: req.query.offset }));
+});
+
+// 下载进度轮询
+app.get('/api/online/download/:jobId', authMiddleware, (req, res) => {
+  const job = getJob(req.params.jobId);
+  if (!job) return res.status(404).json({ error: '任务不存在或已过期' });
+  res.json(publicJob(job));
 });
 
 // ── AstrBot 联动（后端代理：凭据存服务端，绝不下发前端） ──

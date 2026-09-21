@@ -6,36 +6,89 @@
 <title>管理后台 — 漫画阅读器</title>
 <link rel="stylesheet" href="/css/fnos-theme.css">
 <style>
-.admin-container { max-width:640px; margin:48px auto; padding:24px; }
-.admin-card { background:rgba(22,22,30,0.7); border:1px solid rgba(255,255,255,0.07); border-radius:16px; padding:28px; margin-bottom:20px; }
-.admin-card h2 { font-size:17px; margin-bottom:16px; color:#f5f5f7; }
-.admin-card h3 { font-size:15px; color:#98989d; margin:16px 0 12px; }
-.form-row { display:flex; gap:10px; margin-bottom:10px; }
-.form-row input, .form-row select { flex:1; height:40px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:0 12px; font-size:13px; color:#f5f5f7; font-family:var(--font); outline:none; }
-.form-row input:focus { border-color:rgba(94,92,230,0.5); }
-.btn { padding:8px 20px; border-radius:10px; border:none; cursor:pointer; font-size:13px; font-weight:500; font-family:var(--font); white-space:nowrap; }
-.btn-primary { background:var(--accent); color:#fff; }
-.btn-danger { background:rgba(255,69,58,0.12); color:#ff453a; }
-.btn-back { background:transparent; color:#98989d; text-decoration:none; display:inline-flex; align-items:center; gap:6px; font-size:14px; margin-bottom:20px; }
-.btn-back:hover { color:#f5f5f7; }
-.user-list { list-style:none; }
-.user-list li { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-radius:10px; margin-bottom:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); gap:8px; flex-wrap:wrap; }
-.user-info { display:flex; align-items:center; gap:8px; }
-.role-badge { font-size:10px; padding:2px 8px; border-radius:4px; }
-.role-admin { background:rgba(94,92,230,0.15); color:#5e5ce6; }
-.role-user { background:rgba(255,255,255,0.06); color:#98989d; }
-.user-actions { display:flex; gap:6px; }
-.user-actions button { padding:3px 10px; font-size:11px; }
-.msg { font-size:12px; padding:6px 0; }
-.msg-error { color:#ff453a; }
-.msg-ok { color:#30d158; }
-.lib-list li { padding:10px 14px; border-radius:10px; margin-bottom:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.05); display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.lib-path { font-size:12px; color:#98989d; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* 与主界面 fnos-theme.css 同一套设计语言：同一背景渐变 / 玻璃态卡片 / 统一强调色 */
+body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%, #050507 100%); min-height: 100vh; }
+.admin-container { max-width: 660px; margin: 0 auto; padding: 32px 20px 64px; }
+.admin-card {
+  background: var(--glass-panel, rgba(20,20,22,0.75));
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px; padding: 24px; margin-bottom: 16px;
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+}
+.admin-card h2 { font-size: 16px; font-weight: 600; margin: 0 0 16px; color: var(--text-main, #fff); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-card h3 { font-size: 14px; color: var(--text-sub, rgba(255,255,255,0.6)); margin: 16px 0 12px; }
+.card-sub { font-size: 11.5px; font-weight: 400; color: var(--text-sub, rgba(255,255,255,0.5)); }
+.form-row { display: flex; gap: 10px; margin-bottom: 10px; }
+.form-row input, .form-row select {
+  flex: 1; height: 40px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 11px; padding: 0 12px; font-size: 13.5px; color: var(--text-main, #fff);
+  font-family: var(--font); outline: none; transition: border-color 0.2s;
+}
+.form-row input:focus, .form-row select:focus { border-color: rgba(10,132,255,0.55); }
+.btn { padding: 9px 18px; border-radius: 11px; border: none; cursor: pointer; font-size: 13.5px; font-weight: 500; font-family: var(--font); white-space: nowrap; transition: transform 0.15s var(--spring), background 0.2s; }
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--accent, #0A84FF); color: #fff; }
+.btn-danger { background: rgba(255,69,58,0.12); color: #ff453a; }
+.btn-ghost { background: rgba(255,255,255,0.07); color: var(--text-main, #fff); }
+.btn-back { background: transparent; color: var(--text-sub, rgba(255,255,255,0.6)); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; margin-bottom: 20px; }
+.btn-back:hover { color: var(--text-main, #fff); }
+.user-list, .lib-list { list-style: none; padding: 0; margin: 0; }
+.user-list li, .lib-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 11px 14px; margin-bottom: 6px; border-radius: 12px;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+}
+.user-info { display: flex; align-items: center; gap: 8px; }
+.role-badge { font-size: 10px; padding: 2px 8px; border-radius: 5px; }
+.role-admin { background: rgba(10,132,255,0.16); color: #4da3ff; }
+.role-user { background: rgba(255,255,255,0.06); color: var(--text-sub, rgba(255,255,255,0.6)); }
+.user-actions { display: flex; gap: 6px; }
+.user-actions button { padding: 4px 11px; font-size: 11.5px; }
+.lib-path { font-size: 12px; color: var(--text-sub, rgba(255,255,255,0.6)); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg { font-size: 12.5px; padding: 6px 0; min-height: 18px; }
+.msg-error { color: #ff453a; }
+.msg-ok { color: #30d158; }
+
+/* ── 操作日志 ── */
+.log-toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.log-toolbar select {
+  flex: 1; min-width: 108px; height: 36px; background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 0 10px;
+  font-size: 13px; color: var(--text-main, #fff); font-family: var(--font); outline: none;
+}
+.log-list { max-height: 420px; overflow-y: auto; }
+.log-empty { font-size: 12.5px; color: var(--text-sub, rgba(255,255,255,0.5)); text-align: center; padding: 20px 0; }
+.log-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border-radius: 10px; margin-bottom: 4px; background: rgba(255,255,255,0.025); font-size: 12.5px; line-height: 1.5; }
+.log-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; background: #30d158; }
+.log-dot.fail { background: #ff453a; }
+.log-dot.partial { background: #ffd60a; }
+.log-dot.blocked { background: #ff9f0a; }
+.log-body { flex: 1; min-width: 0; }
+.log-line1 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.log-user { font-weight: 600; color: var(--text-main, #fff); }
+.log-action { font-size: 10.5px; padding: 1px 7px; border-radius: 5px; background: rgba(10,132,255,0.14); color: #4da3ff; }
+.log-time { color: rgba(255,255,255,0.35); font-size: 11px; margin-left: auto; white-space: nowrap; }
+.log-detail { color: var(--text-sub, rgba(255,255,255,0.6)); word-break: break-word; margin-top: 2px; }
+.log-ip { color: rgba(255,255,255,0.3); font-size: 11px; }
+.log-more { text-align: center; margin-top: 10px; }
 </style>
 </head>
 <body>
 <div class="admin-container">
 <a class="btn-back" href="/app">← 返回书架</a>
+
+<!-- 操作日志 -->
+<div class="admin-card">
+<h2>操作日志 <span class="card-sub">（仅管理员可见）</span></h2>
+<div class="log-toolbar">
+  <select id="logUser" onchange="loadAudit(0)"><option value="">全部账号</option></select>
+  <select id="logAction" onchange="loadAudit(0)"><option value="">全部操作</option></select>
+  <button class="btn btn-ghost" onclick="loadAudit(0)">刷新</button>
+</div>
+<div class="log-list" id="logList"><div class="log-empty">加载中…</div></div>
+<div class="log-more" id="logMore" style="display:none"><button class="btn btn-ghost" onclick="loadAudit(logOffset)">加载更多</button></div>
+</div>
 
 <!-- 用户管理 -->
 <div class="admin-card">
@@ -188,7 +241,81 @@ async function saveSettings(){
 function showMsg(id,text,err){ var el=document.getElementById(id); el.textContent=text; el.className='msg '+(err?'msg-error':'msg-ok'); }
 function esc(s){ var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
-loadUsers(); loadLibs(); loadSettings();
+// ── 操作日志（仅管理员可见）──────────────────────
+var logOffset = 0;
+var ACTION_LABEL = {
+  'login': '登录', 'delete-comic': '删除漫画', 'online-download': '下载入库',
+  'add-user': '新增用户', 'remove-user': '删除用户', 'reset-password': '重置密码',
+  'set-role': '修改角色', 'add-library': '添加库', 'remove-library': '移除库',
+  'update-settings': '修改设置'
+};
+
+function fmtTime(iso) {
+  try {
+    var d = new Date(iso);
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' '
+      + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  } catch (e) { return iso; }
+}
+
+async function loadAudit(offset) {
+  var list = document.getElementById('logList');
+  if (!offset) { offset = 0; logOffset = 0; list.innerHTML = '<div class="log-empty">加载中…</div>'; }
+  var u = document.getElementById('logUser').value;
+  var a = document.getElementById('logAction').value;
+  try {
+    var qs = '?limit=50&offset=' + offset;
+    if (u) qs += '&user=' + encodeURIComponent(u);
+    if (a) qs += '&action=' + encodeURIComponent(a);
+    var r = await api('/api/admin/audit' + qs);
+    var d = await r.json();
+    if (!r.ok) { list.innerHTML = '<div class="log-empty">' + esc(d.error || '加载失败') + '</div>'; return; }
+
+    // 首次加载时填充筛选项
+    var us = document.getElementById('logUser');
+    if (us.options.length <= 1) {
+      var seen = {};
+      d.items.forEach(function (x) {
+        if (x.user && !seen[x.user]) {
+          seen[x.user] = 1;
+          var o = document.createElement('option'); o.value = x.user; o.textContent = x.user; us.appendChild(o);
+        }
+      });
+    }
+    var as = document.getElementById('logAction');
+    if (as.options.length <= 1) {
+      (d.actions || []).forEach(function (k) {
+        var o = document.createElement('option'); o.value = k; o.textContent = ACTION_LABEL[k] || k; as.appendChild(o);
+      });
+    }
+
+    var html = (d.items || []).map(function (x) {
+      var cls = x.result === 'fail' ? 'fail' : (x.result === 'partial' ? 'partial' : (x.result === 'blocked' ? 'blocked' : ''));
+      return '<div class="log-item">'
+        + '<div class="log-dot ' + cls + '"></div>'
+        + '<div class="log-body">'
+        +   '<div class="log-line1">'
+        +     '<span class="log-user">' + esc(x.user) + '</span>'
+        +     '<span class="log-action">' + esc(ACTION_LABEL[x.action] || x.action) + '</span>'
+        +     '<span class="log-time">' + esc(fmtTime(x.t)) + '</span>'
+        +   '</div>'
+        +   (x.detail ? '<div class="log-detail">' + esc(x.detail) + '</div>' : '')
+        +   '<div class="log-ip">IP ' + esc(x.ip || '—') + (x.result && x.result !== 'ok' ? ' · ' + esc(x.result) : '') + '</div>'
+        + '</div></div>';
+    }).join('');
+
+    if (offset === 0) list.innerHTML = html || '<div class="log-empty">暂无记录</div>';
+    else list.insertAdjacentHTML('beforeend', html);
+
+    logOffset = offset + (d.items || []).length;
+    document.getElementById('logMore').style.display = (logOffset < d.total) ? 'block' : 'none';
+  } catch (e) {
+    list.innerHTML = '<div class="log-empty">加载失败</div>';
+  }
+}
+
+loadUsers(); loadLibs(); loadSettings(); loadAudit(0);
 </script>
 </body>
 </html>

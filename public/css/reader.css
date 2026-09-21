@@ -295,3 +295,101 @@
 .detail-chapter-item:hover .detail-chapter-title { color: #fff; }
 .detail-chapter-no { font-size: 11px; color: var(--accent, #0A84FF); font-weight: 600; }
 .detail-chapter-item:hover .detail-chapter-no { color: rgba(255,255,255,0.9); }
+
+
+/* ── 系列入口卡片（搜索引擎聚合） ── */
+.series-entry { position: relative; }
+.series-badge {
+  position: absolute; top: 6px; right: 6px;
+  background: rgba(0,0,0,0.65); color: #fff;
+  font-size: 11px; font-weight: 600;
+  padding: 2px 7px; border-radius: 20px;
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  letter-spacing: 0.3px;
+}
+.series-entry .title { font-size: 13px; line-height: 1.35; }
+.series-entry:hover { transform: translateY(-1px); }
+
+/* ── 漫画页按标签分块：块标题（标签名） ── */
+.series-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 28px;
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid rgba(255,255,255,0.08);
+}
+.series-header h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-main, #fff);
+}
+.series-header .count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-sub, rgba(255,255,255,0.55));
+}
+[data-theme="light"] .series-header h2 { color: var(--text-main, #1a1a1a); }
+[data-theme="light"] .series-header { border-bottom-color: rgba(0,0,0,0.08); }
+/* ═══════════════════════════════════════════════════════
+   阅读器返回体验增强：悬浮返回胶囊与快速脱离动画
+   ═══════════════════════════════════════════════════════ */
+
+/* 悬浮自适应返回胶囊 */
+.reader-floating-back {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  z-index: 2147483640; /* 置于阅读视口与控制层最前 */
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(20, 20, 24, 0.65);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.4s cubic-bezier(0.25, 1, 0.5, 1), transform 0.2s ease, background 0.2s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.reader-floating-back:hover {
+  opacity: 1 !important;
+  transform: scale(1.06);
+  background: rgba(30, 30, 36, 0.85);
+}
+
+.reader-floating-back:active {
+  transform: scale(0.92);
+}
+
+/* 闲置幽灵态：阅读 3 秒后弱化至接近不可见，不遮挡作画 */
+.reader-floating-back.ghost {
+  opacity: 0.12;
+}
+
+.reader-floating-back svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+/* 阅读器容器即时退出状态机 */
+#reader.exiting {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.15s ease-out !important;
+}

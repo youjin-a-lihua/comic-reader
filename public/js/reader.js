@@ -14,10 +14,18 @@ let pdfState = null;  // PDF 章节目录状态（仿 epubState）
 // ── 打开阅读器 ──
 
 async function openReader(comic, startPage) {
+  // 防御：上一本若经由异常退出路径（物理返回键 / 手势）残留了 PDF 文档实例，
+  // 这里必须先销毁，否则 loadPdfPage 会因 `if (!pdfDoc)` 跳过加载 → 复用旧文档，
+  // 表现为「看完一本，下一本显示的还是上一本 / 页码越界加载失败」。
+  releasePdfDoc();
+
   // EPUB 用专用阅读器
   if (comic.ext === 'epub') {
     return openEpubReader(comic);
   }
+  // 更新 URL hash（深链：支持前进后退/分享/收藏）
+  try { history.pushState(null, '', '#reader/' + encodeURIComponent(String(comic.sourceId || comic.id))); } catch (e) {}
+
   // 获取信息
   let info = comic;
   if (!info.pageCount && info.ext === 'pdf') {
@@ -31,6 +39,10 @@ async function openReader(comic, startPage) {
   pdfState = comic.ext === 'pdf'
     ? { toc: [], hasToc: false, sidebarOpen: false, tocLoaded: false }
     : null;
+
+  // 不再创建悬浮返回胶囊：它与顶栏左上角的 ← 功能重复、位置重叠（都在 16px 处），
+  // 用户反馈「左上角有三个返回键」。这里保留一次清理，用于移除历史版本留下的残留节点。
+  if (typeof removeFloatingBackButton === 'function') removeFloatingBackButton();
 
   readerState = {
     comic: info,
@@ -56,6 +68,9 @@ async function openReader(comic, startPage) {
 
 function buildReaderUI() {
   const container = document.getElementById('reader');
+  // 清除上一次「瞬时退出」遗留的动画态：innerHTML 重建不会重置容器自身的 class，
+  // 若残留 .exiting，新打开的书会继承退出态样式而不可见。
+  container.classList.remove('exiting');
   const isScroll = readerState.mode === 'scroll';
 
   container.innerHTML = `
@@ -70,6 +85,7 @@ function buildReaderUI() {
       <button class="tool-btn" id="btnLike" onclick="toggleLikeComic()" title="点赞">🤍</button>`}
       <button class="tool-btn" id="btnMode" onclick="toggleMode()" title="${isScroll ? '切换翻页' : '切换滚动'}">${isScroll ? '📜' : '📄'}</button>
       <button class="tool-btn" id="btnDirection" onclick="toggleDirection()" title="阅读方向">⇄</button>
+      ${readerState.comic.online ? `<button class="tool-btn" id="btnDlOnline" onclick="dlCurrentOnlineChapter()" title="下载本话到本地库">⬇️</button>` : ''}
       ${readerState.comic.ext === 'pdf' ? `<button class="tool-btn" id="pdfBtnToc" onclick="pdfToggleSidebar()" title="目录" style="display:none">☰</button>` : ''}
     </div>
 
@@ -558,7 +574,8 @@ function toggleMode() {
   if (readerState.scrollObserver) readerState.scrollObserver.disconnect();
   readerState.renderedPages.clear();
 
-  if (readerState.comic.ext === 'pdf') pdfDoc = null;
+  // 复用已加载的 pdfDoc：page.render 会按新 viewport 重绘，无需重新 getDocument。
+  // （原实现置 null 会让每次切换模式/缩放都重新下载整个 PDF，大文件下极卡）
 
   updateModeBtn();
   buildReaderUI();
@@ -577,18 +594,14 @@ function toggleDirection() {
   }
 
   if (readerState.comic.ext === 'pdf' && readerState.mode === 'double') {
-    pdfDoc = null;
-    loadPage();
+    loadPage();  // 复用 pdfDoc，仅重绘左右顺序
   }
 }
 
 function changeZoom(zoom) {
   readerState.zoom = zoom;
   showZoomIndicator(zoom);
-
-  if (readerState.comic.ext === 'pdf') {
-    pdfDoc = null;
-  }
+  // 复用 pdfDoc，仅按新缩放重绘（不再重新下载整个 PDF）
   loadPage();
 }
 
@@ -609,12 +622,23 @@ function showZoomIndicator(zoom) {
 
 // ── 关闭阅读器 ──
 
+// 释放 pdf.js 文档实例（终止 worker、清页面缓存）。
+// 仅置 null 而不 destroy 会让文档、worker 与已请求的分块数据常驻内存，
+// 安卓 WebView 下连开两本大 PDF 就会吃满内存。
+function releasePdfDoc() {
+  if (!pdfDoc) return;
+  try { pdfDoc.destroy(); } catch (e) {}
+  pdfDoc = null;
+}
+
 function closeReader() {
   const closingId = readerState ? readerState.comic.id : null;
   const wasOnline = !!(readerState && readerState.comic.online);
   if (!wasOnline) saveProgress(); // 在线漫画不保存本地进度
   if (readerState && readerState.scrollObserver) readerState.scrollObserver.disconnect();
-  pdfDoc = null;
+  // 清掉悬浮返回胶囊（历史版本在此路径上遗漏，会让它在详情页残留成第二个 ←）
+  if (typeof removeFloatingBackButton === 'function') removeFloatingBackButton();
+  releasePdfDoc();
   pdfState = null;
   readerState = null;
 
@@ -634,9 +658,18 @@ function closeReader() {
   window._libraryNeedsRefresh = true;
 
   // 退出阅读器 → 回到同系列详情页（而非书架顶部），符合正常返回逻辑
+  // 恢复 URL hash 到返回页面（replaceState 不污染历史）
+  try {
+    const backTab = closingId && typeof showDetailForComic === 'function' ? 'detail' : 'comic';
+    history.replaceState(null, '', '#' + backTab);
+  } catch (e) {}
   if (closingId && typeof showDetailForComic === 'function') showDetailForComic(closingId);
   else loadLibraryData();
 }
+
+// 供 app.js 的「瞬时退出」(closeReaderFast) 复用核心收尾逻辑：
+// 无论走哪条退出路径，pdfDoc / readerState 都必须被重置。
+window.__coreCloseReader = closeReader;
 
 // ── 触屏手势：双指缩放 + 双击放大 ──────────────
 
@@ -742,7 +775,7 @@ function handleDoubleTap(touch) {
 }
 
 function reloadContent() {
-  if (readerState.comic.ext === 'pdf') pdfDoc = null;
+  // 复用已加载的 pdfDoc，仅重建渲染容器（缩放/双击放大走这里）
   if (readerState.mode === 'scroll') {
     readerState.renderedPages.clear();
     const vp = document.getElementById('readerViewport');
@@ -1059,6 +1092,11 @@ function closeEpubReader() {
   document.getElementById('reader').innerHTML = '';
   document.body.classList.remove('reader-mode');
   window._libraryNeedsRefresh = true;
+  // 恢复 URL hash 到返回页面（replaceState 不污染历史）
+  try {
+    const backTab = closingId && typeof showDetailForComic === 'function' ? 'detail' : 'comic';
+    history.replaceState(null, '', '#' + backTab);
+  } catch (e) {}
   if (closingId && typeof showDetailForComic === 'function') showDetailForComic(closingId);
   else loadLibraryData();
 }

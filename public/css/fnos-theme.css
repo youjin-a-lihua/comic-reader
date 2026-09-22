@@ -445,3 +445,42 @@ body[data-layout="pragmatic"] .series-grid { grid-template-columns: repeat(auto-
   background: rgba(10,132,255,0.85) !important; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 2px 8px rgba(10,132,255,0.35) !important;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   【2026-09-22 性能修复】长列表的入场动画与阴影会打满移动端 GPU
+   ──────────────────────────────────────────────────────────────────────
+   实测（iPhone 视口）：书架/全库页同时存在 74 个 .manga-card，
+   每个都带 `animation: fadeUp 0.6s ... both`（见本文件 129 行），
+   且 JS 按索引错峰加 animation-delay（i*0.03，第 74 个要等 2.2s 才开始）。
+   transform+opacity 动画会把每个卡片提升为独立合成层 —— 74 层同时动画，
+   iOS Safari 直接掉帧，表现为「点返回后卡一下才切过去」。
+
+   更严重的是：本文件 119 行给 .manga-card 加的 content-visibility:auto
+   （本意是跳过屏外元素的渲染）**被动画架空** —— 动画中的元素不会被跳过。
+
+   处理：
+   1. 入场动画只保留首屏可能看到的前 12 个，其余一律不做动画；
+   2. 移动端把卡片阴影的模糊半径压小（74 个阴影是主要绘制开销）；
+   3. 底部导航的 40px 背景模糊在移动端降到 16px。
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* 1) 入场动画只留给「首屏最上方的推荐条」前 6 张。
+   踩坑记录：最初想用 `.manga-card:nth-child(n+13)` 限流，但 nth-child 是
+   **在各自主元素内计数** —— 本页结构是 .series-container(60张) +
+   .recommend-strip(12张) + .library-grid(2张)，各自的前 12 名都能命中，
+   结果仍有 26 张在动。改为按容器精确限定。
+   （manga-card 的父链实测：div.series-grid < div.series-body <
+     div.manga-grid.series-container；div.rec-cell < div.rec-scroll <
+     div.rec-scroll-row < section.recommend-strip） */
+.manga-card { animation: none !important; }                       /* 默认不做 */
+.recommend-strip .rec-cell:nth-child(-n+6) .manga-card {          /* 只留首屏可见的 6 张 */
+  animation: fadeUp 0.6s var(--spring) both !important;
+}
+
+/* 2) 移动端收敛阴影与背景模糊开销 */
+@media (max-width: 768px) {
+  body[data-layout="spatial"] .manga-card { box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
+  body[data-layout="pragmatic"] .manga-cover-wrap { box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+  .bottom-nav { backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%); }
+  .rec-badge { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
+}

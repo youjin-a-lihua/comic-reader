@@ -8,7 +8,10 @@
   position: fixed;
   inset: 0;
   background: #000;
-  z-index: 1000;
+  /* 【2026-09-22】1000 -> 2000：阅读器是全屏独占层，必须高于详情页内容
+     （详情页的 .detail-back 已调整为 900）。原先 1000 与部分详情页元素过于接近，
+     且曾低于 detail-back 的 9999，导致返回键穿层。 */
+  z-index: 2000;
   display: flex;
   flex-direction: column;
   user-select: none;

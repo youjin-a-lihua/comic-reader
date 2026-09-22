@@ -2648,10 +2648,11 @@ function updateLocalProgressAfterRead() {
 let _readerBackTimer = null;
 
 function ensureFloatingBackButton() {
-  /* 【2026-09-22 停用】悬浮返回胶囊与顶栏左上角 ← 功能重复、位置重叠（均在 16px 处），
-     iPhone 上表现为「两个回退键」；且它走 history.back()，无历史条目时不回退，
-     随后进入 .ghost 态（opacity 0.12）看似消失。全部停用，仅保留同名空实现以防调用报错。 */
-  return;
+  /* 【2026-09-22 修正】
+     胶囊不是「重复按钮」，而是顶栏被折叠（点空白处会自动折叠）时**唯一的返回入口**。
+     上一版直接删掉它，导致顶栏一折叠用户就找不到返回键。
+     现改为「与顶栏互补」：顶栏可见时隐藏胶囊，顶栏折叠时才显示 —— 两者永不同时出现，
+     既不会有重叠的双 ← ，也不会在顶栏折叠后失去返回能力。 */
   let btn = document.getElementById('readerFloatingBack');
   if (!btn) {
     btn = document.createElement('button');
@@ -2666,36 +2667,41 @@ function ensureFloatingBackButton() {
     btn.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
-      // 优先走路由后退，保持历史栈对齐
-      if (location.hash.startsWith('#reader/')) {
-        history.back();
+      // 【2026-09-22】直接退出阅读器。原实现优先 history.back()，
+      // 在无历史条目（深链直开 / PWA 冷启）时毫无反应，用户以为按钮坏了。
+      // 用 closeReader() 归一，它内部已处理「在线→在线详情 / 本地→同系列详情」的分支。
+      if (typeof closeReader === 'function') {
+        closeReader();
       } else {
-        closeReaderFast();
+        history.back();
       }
     };
     document.body.appendChild(btn);
 
-    // 交互唤醒事件
-    const wakeUp = () => {
-      btn.classList.remove('ghost');
-      clearTimeout(_readerBackTimer);
-      _readerBackTimer = setTimeout(() => {
-        const reader = document.getElementById('reader');
-        if (reader && reader.style.display !== 'none') {
-          btn.classList.add('ghost');
-        }
-      }, 3000);
-    };
-
-    window.addEventListener('mousemove', wakeUp, { passive: true });
-    window.addEventListener('touchstart', wakeUp, { passive: true });
-    window.addEventListener('scroll', wakeUp, { passive: true });
+    /* 【2026-09-22】移除旧的「闲置 3 秒转幽灵态 + 交互唤醒」逻辑：
+       它导致按钮看起来会自己消失/变淡；现在显隐完全由 setFloatingBackVisible 控制。 */
   }
 
-  btn.style.display = 'flex';
-  btn.classList.remove('ghost');
+  return btn;
+}
+
+/**
+ * 【2026-09-22】按顶栏显隐状态同步胶囊：controlsVisible=true（顶栏在）→ 藏胶囊。
+ * 由 reader.js 的控制栏切换逻辑调用，保证两者互斥显示。
+ */
+function setFloatingBackVisible(visible) {
   clearTimeout(_readerBackTimer);
-  _readerBackTimer = setTimeout(() => btn.classList.add('ghost'), 3000);
+  if (visible) {
+    const btn = ensureFloatingBackButton();
+    btn.style.display = 'flex';
+    btn.classList.remove('ghost');
+  } else {
+    const btn = document.getElementById('readerFloatingBack');
+    if (btn) {
+      btn.style.display = 'none';
+      btn.classList.add('ghost');
+    }
+  }
 }
 
 function removeFloatingBackButton() {

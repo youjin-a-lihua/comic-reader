@@ -40,9 +40,10 @@ async function openReader(comic, startPage) {
     ? { toc: [], hasToc: false, sidebarOpen: false, tocLoaded: false }
     : null;
 
-  // 不再创建悬浮返回胶囊：它与顶栏左上角的 ← 功能重复、位置重叠（都在 16px 处），
-  // 用户反馈「左上角有三个返回键」。这里保留一次清理，用于移除历史版本留下的残留节点。
+  // 【2026-09-22】进入阅读器：清理可能残留的旧胶囊，随后按「顶栏可见」的初始状态收起它。
+  // 胶囊仅在用户点击空白折叠顶栏后才出现，作为此时的唯一返回入口。
   if (typeof removeFloatingBackButton === 'function') removeFloatingBackButton();
+  if (typeof setFloatingBackVisible === 'function') setFloatingBackVisible(false);
 
   readerState = {
     comic: info,
@@ -882,9 +883,13 @@ document.addEventListener('click', (e) => {
   if (readerState.controlsVisible) {
     topbar?.classList.remove('hidden');
     bottombar?.classList.remove('hidden');
+    // 【2026-09-22】顶栏可见 → 收起悬浮返回键，避免出现两个重叠的 ←
+    if (typeof setFloatingBackVisible === 'function') setFloatingBackVisible(false);
   } else {
     topbar?.classList.add('hidden');
     bottombar?.classList.add('hidden');
+    // 【2026-09-22】顶栏已折叠 → 显示悬浮返回键，否则用户没有任何返回入口
+    if (typeof setFloatingBackVisible === 'function') setFloatingBackVisible(true);
   }
 });
 

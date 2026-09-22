@@ -406,3 +406,31 @@
 #readerFloatingBack {
   display: none;          /* 默认隐藏，由 JS 按顶栏状态切换为 flex */
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   【2026-09-22 根因修复】阅读器独占模式
+   ──────────────────────────────────────────────────────────────────────
+   背景：reader.js 一直在 openReader/closeReader 里 add/remove 'reader-mode'
+   类，但三个 CSS 文件里都【没有任何 reader-mode 规则】—— 等于白加。
+
+   后果：打开阅读器时下层 #page-detail 仍是 .active（display:block），
+   它的 .detail-back（position:fixed; z-index:900）是真渲染出来的，
+   只靠 z-index 压制。桌面/Chrome 守规矩，但 **iOS Safari 对多层
+   position:fixed 的 z-index 处理不可靠**，于是详情页的返回键穿层浮到
+   阅读器之上 —— 表现为「两个回退键，其中大的那个点不动」。
+
+   为什么「继续阅读」不复现：那条路径不经过详情页，#page-detail 不是
+   .active（display:none），.detail-back 压根不可见。
+
+   解法：让 reader-mode 真正生效 —— 直接把下层页面与全局浮层藏掉，
+   不再依赖 z-index 的层叠行为。
+   注意 #reader 与 .page 是兄弟节点（都在 body 下），所以这里不会误伤阅读器。
+   ══════════════════════════════════════════════════════════════════════ */
+body.reader-mode .page,
+body.reader-mode .header-container,
+body.reader-mode .bottom-nav,
+body.reader-mode #selBar,
+body.reader-mode #fnToast,
+body.reader-mode .ambient-bg {
+  display: none !important;
+}

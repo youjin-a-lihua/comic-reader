@@ -63,6 +63,7 @@ docker run -d -p 3000:3000 \
 | `JWT_SECRET` | empty | Left empty, a secret is generated on first start and written to `DATA_DIR/.jwt-secret`. You may supply a fixed string of 32+ characters instead |
 | `ONLINE_SOURCE` | empty (off) | Which online sources to enable. Empty enables **none**. Accepts one (`jm`), several separated by commas or spaces (`jm,kavita`), or `all` for everything listed in `lib/sources/sources.json` |
 | `NOVEL_DIR` | empty | Absolute path to a novel directory; without it the "novels" library is not shown |
+| `DECRYPT_PASSWORD` | empty | Open password for encrypted PDFs. Can also be set on the admin page (**takes precedence** — it is persisted to `DATA_DIR/settings.json`). Empty in both places means nothing is decrypted |
 
 ---
 
@@ -143,6 +144,11 @@ Requires Node.js ≥ 20. `sharp` installs from a prebuilt binary, so no local to
 ---
 
 ## 📦 Changelog
+
+### v1.4.2 (2026-09-29)
+
+**Security**
+- 🔐 **Removed the hardcoded default decrypt password.** The plaintext default baked into `lib/settings.js` is gone; the password now comes from the admin page or `DECRYPT_PASSWORD`. With neither set, auto-decrypt stays idle rather than trying an empty password
 
 ### v1.4.1 (2026-09-29)
 

@@ -239,7 +239,14 @@ async function scanAllLibs(force = false) {
       console.error(`[scan] 库 ${lib.path} 扫描失败:`, err.message);
     }
   }
-  for (const c of all) c.type = ['pdf', 'cbz', 'cbr'].includes(c.ext) ? 'comic' : 'novel';
+  /* 【2026-09-23】type 优先采用 sidecar 元数据的显式声明，其次按扩展名推断。
+     原实现硬编码按 ext 判断，导致放进 /novels 库的 PDF（法学教材等）
+     仍被判为 comic，无法出现在「小说」板块。 */
+  for (const c of all) {
+    c.type = (c.metaType === 'novel' || c.metaType === 'comic')
+      ? c.metaType
+      : (['pdf', 'cbz', 'cbr'].includes(c.ext) ? 'comic' : 'novel');
+  }
 
   // 只预热本次扫描新增的漫画，避免每次全量预热（既省 CPU/IO，
   // 也防止 _prewarming 锁导致新漫画的 prewarm 被旧预热吞掉）
@@ -600,6 +607,12 @@ async function deleteComicFully(comic) {
     const safe = String(id).replace(/[^\w.-]/g, '_').slice(0, 128);
     await fs.promises.rm(path.join(commentsDir, `${safe}.json`), { force: true });
   } catch (e) { /* 可能没有评论文件 */ }
+
+  // 6b) 批注
+  try {
+    const safeA = String(id).replace(/[^\w.-]/g, '_').slice(0, 128);
+    await fs.promises.rm(path.join(annotationsDir, `${safeA}.json`), { force: true });
+  } catch (e) { /* 可能没有批注文件 */ }
 
   // 7) 书架：从每位用户的书架里移除该漫画
   try {
@@ -1039,6 +1052,87 @@ app.post('/api/comic/:id/comments', authMiddleware, async (req, res) => {
   store.update(list => { list.push(entry); });
   store.flush();
   res.json({ success: true, comment: entry });
+});
+
+// ── 批注 / 笔记（按 comic id 分文件；含章节、原文、批注、颜色） ──
+// 前端在 EPUB 阅读器里选中文字 → 高亮 + 写批注；锚点 = 章节号 + 原文 + 第几次出现
+const annotationsDir = path.join(DATA_DIR, 'annotations');
+const ANNOT_COLORS = ['yellow', 'green', 'blue', 'pink'];
+function annotationsStore(id) {
+  const safe = String(id).replace(/[^\w.-]/g, '_').slice(0, 128);
+  return getStore(path.join(annotationsDir, `${safe}.json`), []);
+}
+app.get('/api/comic/:id/annotations', authMiddleware, async (req, res) => {
+  const list = annotationsStore(req.params.id).read();
+  res.json(Array.isArray(list) ? list : []);
+});
+app.post('/api/comic/:id/annotations', authMiddleware, async (req, res) => {
+  const b = req.body || {};
+  const text = String(b.text || '').trim();
+  if (!text) return res.status(400).json({ error: '批注原文不能为空' });
+  const entry = {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    chapter: parseInt(b.chapter, 10) || 0,
+    text: text.slice(0, 2000),
+    note: String(b.note || '').trim().slice(0, 2000),
+    color: ANNOT_COLORS.includes(b.color) ? b.color : 'yellow',
+    occur: parseInt(b.occur, 10) || 0,
+    prefix: String(b.prefix || '').slice(0, 40),
+    suffix: String(b.suffix || '').slice(0, 40),
+    user: req.user.username,
+    ts: new Date().toISOString()
+  };
+  const store = annotationsStore(req.params.id);
+  store.update(list => { list.push(entry); });
+  store.flush();
+  res.json({ success: true, annotation: entry });
+});
+app.patch('/api/comic/:id/annotations/:aid', authMiddleware, async (req, res) => {
+  const store = annotationsStore(req.params.id);
+  let hit = null;
+  store.update(list => {
+    const it = list.find(a => a.id === req.params.aid);
+    if (it) {
+      if (typeof req.body.note === 'string') it.note = req.body.note.slice(0, 2000);
+      if (ANNOT_COLORS.includes(req.body.color)) it.color = req.body.color;
+      it.updatedAt = new Date().toISOString();
+      hit = it;
+    }
+  });
+  store.flush();
+  if (!hit) return res.status(404).json({ error: '批注不存在' });
+  res.json({ success: true, annotation: hit });
+});
+app.delete('/api/comic/:id/annotations/:aid', authMiddleware, async (req, res) => {
+  const store = annotationsStore(req.params.id);
+  const before = store.read().length;
+  store.set(store.read().filter(a => a.id !== req.params.aid));
+  res.json({ success: store.read().length < before });
+});
+
+// ── AI 章节总结（按 comic id 分文件，key = 章节目录序号） ──
+// 结构: { "0": { title, framework:[{t,items:[]}], concepts:[{term,desc}], statutes:[{law,article,note}], qa:[{q,a}], tips:[] } }
+const summariesDir = path.join(DATA_DIR, 'summaries');
+function summariesStore(id) {
+  const safe = String(id).replace(/[^\w.-]/g, '_').slice(0, 128);
+  return getStore(path.join(summariesDir, `${safe}.json`), {});
+}
+app.get('/api/comic/:id/summary', authMiddleware, async (req, res) => {
+  const all = summariesStore(req.params.id).read();
+  res.json(all && typeof all === 'object' ? all : {});
+});
+app.get('/api/comic/:id/summary/:chapter', authMiddleware, async (req, res) => {
+  const all = summariesStore(req.params.id).read() || {};
+  const one = all[String(req.params.chapter)];
+  if (!one) return res.status(404).json({ error: '本章暂无 AI 总结' });
+  res.json(one);
+});
+app.put('/api/comic/:id/summary/:chapter', authMiddleware, adminOnly, async (req, res) => {
+  const store = summariesStore(req.params.id);
+  const key = String(req.params.chapter);
+  store.update(obj => { obj[key] = req.body; });
+  store.flush();
+  res.json({ success: true });
 });
 
 app.get('/api/comic/:id/likes', authMiddleware, async (req, res) => {

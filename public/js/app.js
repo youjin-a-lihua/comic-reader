@@ -1066,6 +1066,27 @@ function renderComicGridByTag() {
           .sort((a, b) => (new Date(b.mtime || 0) - new Date(a.mtime || 0)))
           .slice(0, MAX_PER_TAG)
       }));
+    /* 【2026-09-23 修复】把「没有任何标签」的书归入「未分类」组。
+       原逻辑只对有标签的书分组，无标签的书（tags: []）进不了任何组，
+       而 fallback（series.length===0 才显示全部）在本库永远不触发
+       （库里有上千本带「中文」等标签的书），
+       导致无标签的书在「漫画」tab 完全不可见 —— 只能去「全库」找。
+       实测本库有 170+ 本属于这种情况。 */
+    const taggedIds = new Set();
+    for (const arr of Object.values(tagGroups)) for (const c of arr) taggedIds.add(c.id);
+    const untagged = comics.filter(c => !taggedIds.has(c.id));
+    if (untagged.length > 0) {
+      series.push({
+        name: '未分类',
+        tag: '',
+        count: untagged.length,
+        total: untagged.length,
+        items: untagged
+          .slice()
+          .sort((a, b) => (new Date(b.mtime || 0) - new Date(a.mtime || 0)))
+          .slice(0, MAX_PER_TAG)
+      });
+    }
     if (series.length === 0) {
       series = [{ name: '', count: comics.length, total: comics.length, items: comics.slice(0, MAX_PER_TAG) }];
     }
@@ -2033,6 +2054,27 @@ function renderComicGridByTag() {
           .sort((a, b) => (new Date(b.mtime || 0) - new Date(a.mtime || 0)))
           .slice(0, MAX_PER_TAG)
       }));
+    /* 【2026-09-23 修复】把「没有任何标签」的书归入「未分类」组。
+       原逻辑只对有标签的书分组，无标签的书（tags: []）进不了任何组，
+       而 fallback（series.length===0 才显示全部）在本库永远不触发
+       （库里有上千本带「中文」等标签的书），
+       导致无标签的书在「漫画」tab 完全不可见 —— 只能去「全库」找。
+       实测本库有 170+ 本属于这种情况。 */
+    const taggedIds = new Set();
+    for (const arr of Object.values(tagGroups)) for (const c of arr) taggedIds.add(c.id);
+    const untagged = comics.filter(c => !taggedIds.has(c.id));
+    if (untagged.length > 0) {
+      series.push({
+        name: '未分类',
+        tag: '',
+        count: untagged.length,
+        total: untagged.length,
+        items: untagged
+          .slice()
+          .sort((a, b) => (new Date(b.mtime || 0) - new Date(a.mtime || 0)))
+          .slice(0, MAX_PER_TAG)
+      });
+    }
     if (series.length === 0) {
       series = [{ name: '', count: comics.length, total: comics.length, items: comics.slice(0, MAX_PER_TAG) }];
     }

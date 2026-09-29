@@ -948,7 +948,12 @@ async function openEpubReader(comic) {
     theme: 'dark',         // dark | sepia | light
     sidebarOpen: false,
     controlsVisible: true,
+    annotations: [],       // 本书全部批注（跨章节）
+    annotTab: 'toc',       // 侧栏页签：toc | note
+    selColor: 'yellow',    // 当前批注颜色
   };
+
+  sumCache = {};   // 换书时清空 AI 总结缓存
 
   // 尝试恢复进度
   try {
@@ -972,17 +977,39 @@ function buildEpubUI() {
         <span class="comic-title">${escHtml(epubState.comic.name)}</span>
         <span class="chapter-info" id="epubChapterInfo"></span>
         <button class="tool-btn" id="epubBtnBookmark" onclick="epubToggleBookmark()" title="收藏">☆</button>
+        <button class="tool-btn" id="epubBtnSum" onclick="epubShowSummary()" title="AI 章节总结">AI</button>
+        <button class="tool-btn" id="epubBtnAnnot" onclick="epubShowAnnotations()" title="批注">✎<span class="annot-badge" id="epubAnnotBadge"></span></button>
         <button class="tool-btn" onclick="epubToggleSidebar()" title="目录">☰</button>
       </div>
       <div class="epub-body">
         <div class="epub-sidebar" id="epubSidebar">
-          <div class="epub-sidebar-header"><span>目录</span><button class="tool-btn" onclick="epubToggleSidebar()">✕</button></div>
+          <div class="epub-sidebar-header">
+            <span class="epub-tabs">
+              <a class="epub-tab active" id="epubTabToc" onclick="epubSwitchTab('toc')">目录</a>
+              <a class="epub-tab" id="epubTabSum" onclick="epubSwitchTab('sum')">总结</a>
+              <a class="epub-tab" id="epubTabNote" onclick="epubSwitchTab('note')">批注</a>
+            </span>
+            <button class="tool-btn" onclick="epubToggleSidebar()">✕</button>
+          </div>
           <div class="epub-toc" id="epubToc"></div>
+          <div class="epub-summary" id="epubSummary" style="display:none"></div>
+          <div class="epub-notes" id="epubNotes" style="display:none"></div>
         </div>
         <div class="epub-content-wrapper" id="epubContentWrapper">
           <div class="epub-tap-zone prev" onclick="epubPrevChapter()"></div>
           <div class="epub-content"><iframe id="epubFrame" sandbox="allow-same-origin" style="width:100%;height:100%;border:none;"></iframe></div>
           <div class="epub-tap-zone next" onclick="epubNextChapter()"></div>
+        </div>
+      </div>
+      <div class="annot-toolbar" id="annotToolbar" style="display:none"></div>
+      <div class="annot-editor" id="annotEditor" style="display:none">
+        <div class="annot-editor-quote" id="annotQuote"></div>
+        <textarea id="annotInput" placeholder="写点什么…（可留空，仅高亮）"></textarea>
+        <div class="annot-editor-actions">
+          <button class="annot-btn danger" id="annotDelBtn" onclick="annotDeleteCurrent()" style="display:none">删除高亮</button>
+          <span style="flex:1"></span>
+          <button class="annot-btn" onclick="annotCancel()">取消</button>
+          <button class="annot-btn primary" onclick="annotSave()">保存</button>
         </div>
       </div>
       <div class="epub-bottombar" id="epubBottombar">
@@ -1029,6 +1056,7 @@ async function loadEpubChapter() {
   document.getElementById('epubProgress').textContent = `${epubState.currentChapter + 1} / ${epubState.toc.length}`;
 
   const frame = document.getElementById('epubFrame');
+  frame.onload = () => { annotAttachFrame(); annotApplyHighlights(); };
   try {
     const res = await api(`/api/comic/${epubState.comic.id}/epub/chapter/${epubState.currentChapter}`);
     const html = await res.text();
@@ -1039,6 +1067,8 @@ async function loadEpubChapter() {
 
   renderEpubToc();
   updateEpubBookmarkBtn();
+  annotLoad();
+  if (epubState.annotTab === 'sum') loadChapterSummary();   // 切章时同步刷新总结
   ComicAPI.saveProgress(epubState.comic.id, epubState.currentChapter + 1, epubState.toc.length).catch(() => {});
 }
 
@@ -1089,6 +1119,402 @@ function postEpubMsg(msg) {
 
 function epubToggleBookmark() { epubState.comic.bookmarked = !epubState.comic.bookmarked; updateEpubBookmarkBtn(); ComicAPI.toggleBookmark(epubState.comic.id).catch(() => {}); }
 function updateEpubBookmarkBtn() { const btn = document.getElementById('epubBtnBookmark'); if (btn) btn.textContent = epubState.comic.bookmarked ? '★' : '☆'; }
+
+// ── 批注 / 笔记（选中文字 → 高亮 + 批注；存服务端，跨设备同步） ──
+
+function annotColorHex(c) {
+  return { yellow: '#ffe066', green: '#8ce99a', blue: '#74c0fc', pink: '#f783ac' }[c] || '#ffe066';
+}
+
+async function annotLoad() {
+  try {
+    const list = await ComicAPI.getAnnotations(epubState.comic.id);
+    epubState.annotations = Array.isArray(list) ? list : [];
+  } catch { epubState.annotations = []; }
+  updateAnnotBadge();
+  renderAnnotList();
+  annotApplyHighlights();
+}
+
+function updateAnnotBadge() {
+  const b = document.getElementById('epubAnnotBadge');
+  if (!b) return;
+  const n = (epubState.annotations || []).length;
+  b.textContent = n ? String(n) : '';
+  b.style.display = n ? 'inline-block' : 'none';
+}
+
+function annotApplyHighlights() {
+  const frame = document.getElementById('epubFrame');
+  if (!frame || !frame.contentDocument || !epubState) return;
+  const doc = frame.contentDocument;
+  const body = doc.body;
+  if (!body) return;
+  doc.querySelectorAll('mark[data-annot]').forEach(m => {
+    const parent = m.parentNode;
+    while (m.firstChild) parent.insertBefore(m.firstChild, m);
+    parent.removeChild(m);
+  });
+  (epubState.annotations || []).filter(a => a.chapter === epubState.currentChapter)
+    .forEach(a => annotWrapText(body, a.text, a.occur || 0, a.id, a.color, a.note));
+}
+
+// 按「整个文本流」查找第 occur 次出现的 text，返回 Range（可跨节点、忽略空白差异）
+function annotFindRange(root, text, occur) {
+  if (!text) return null;
+  const doc = root.ownerDocument;
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  const segs = [];
+  let full = '', n = null;
+  while ((n = walker.nextNode())) {
+    if (n.parentNode && n.parentNode.nodeName === 'MARK') continue;
+    segs.push([n, full.length]);
+    full += n.nodeValue;
+  }
+  const chars = [], map = [];
+  for (let i = 0; i < full.length; i++) {
+    if (!/\s/.test(full[i])) { chars.push(full[i]); map.push(i); }
+  }
+  const hay = chars.join('');
+  const needle = String(text).replace(/\s+/g, '');
+  if (!needle) return null;
+  let cnt = -1, at = -1, p = hay.indexOf(needle);
+  while (p >= 0) {
+    cnt++;
+    if (cnt === occur) { at = p; break; }
+    p = hay.indexOf(needle, p + 1);
+  }
+  if (at < 0) return null;
+  const startOff = map[at], endOff = map[at + needle.length - 1] + 1;
+  const posToNode = (off) => {
+    for (let i = 0; i < segs.length; i++) {
+      const node = segs[i][0], s = segs[i][1];
+      if (off >= s && off <= s + node.nodeValue.length) return [node, off - s];
+    }
+    return null;
+  };
+  const a = posToNode(startOff), b = posToNode(endOff);
+  if (!a || !b) return null;
+  const r = doc.createRange();
+  r.setStart(a[0], a[1]);
+  r.setEnd(b[0], b[1]);
+  return r;
+}
+
+// 统计「选区起点之前」出现过几次（得出 0 基序号）
+function annotCountBefore(root, text, node, offset) {
+  const doc = root.ownerDocument;
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  let before = '', n = null;
+  while ((n = walker.nextNode())) {
+    if (n === node) { before += n.nodeValue.slice(0, offset); break; }
+    if (n.parentNode && n.parentNode.nodeName === 'MARK') continue;
+    before += n.nodeValue;
+  }
+  const hay = before.replace(/\s+/g, '');
+  const needle = String(text).replace(/\s+/g, '');
+  if (!needle) return 0;
+  let c = 0, q = hay.indexOf(needle);
+  while (q >= 0) { c++; q = hay.indexOf(needle, q + 1); }
+  return c;
+}
+
+function annotWrapText(root, text, occur, id, color, note) {
+  const range = annotFindRange(root, text, occur);
+  if (!range) return false;
+  try {
+    const mark = root.ownerDocument.createElement('mark');
+    mark.setAttribute('data-annot', id);
+    mark.style.background = annotColorHex(color);
+    mark.style.color = 'inherit';
+    mark.style.borderRadius = '2px';
+    mark.style.cursor = 'pointer';
+    if (note) mark.title = note;
+    mark.appendChild(range.extractContents());
+    range.insertNode(mark);
+    mark.addEventListener('click', (e) => { e.stopPropagation(); annotShowEditorFor(id); });
+    return true;
+  } catch (e) { return false; }
+}
+
+function annotAttachFrame() {
+  const frame = document.getElementById('epubFrame');
+  if (!frame || !frame.contentDocument) return;
+  const doc = frame.contentDocument;
+  if (doc.__annotBound) return;
+  doc.__annotBound = true;
+  doc.addEventListener('mouseup', () => setTimeout(annotOnSelect, 10));
+  doc.addEventListener('touchend', () => setTimeout(annotOnSelect, 250));
+}
+
+let annotPending = null;
+
+function annotOnSelect() {
+  const frame = document.getElementById('epubFrame');
+  const tb = document.getElementById('annotToolbar');
+  if (!frame || !tb || !frame.contentDocument || !epubState) return;
+  const sel = frame.contentWindow.getSelection();
+  const text = sel ? String(sel.toString()).trim() : '';
+  if (!text || text.length > 500) { tb.style.display = 'none'; return; }
+
+  const body = frame.contentDocument.body;
+  let occur = 0;
+  try {
+    const r0 = sel.getRangeAt(0);
+    occur = annotCountBefore(body, text, r0.startContainer, r0.startOffset);
+  } catch (e) {}
+
+  let rect = null;
+  try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch (e) {}
+  const frect = frame.getBoundingClientRect();
+  const x = frect.left + (rect ? rect.left + rect.width / 2 : frect.width / 2);
+  const y = frect.top + (rect ? rect.top : 40);
+
+  annotPending = { text, occur };
+  window._annotEditingId = null;
+  // 选区若落在已有高亮内 → 提供「取消高亮」
+  let insideId = null;
+  try { insideId = annotFindAt(sel.getRangeAt(0).startContainer); } catch (e) {}
+  tb.innerHTML = ['yellow', 'green', 'blue', 'pink'].map(c =>
+    `<button class="annot-dot" style="background:${annotColorHex(c)}" onclick="annotQuick('${c}')" title="高亮"></button>`
+  ).join('')
+    + (insideId ? `<button class="annot-act ghost" onclick="annotUnhighlight('${insideId}')">取消高亮</button>` : '')
+    + `<button class="annot-act" onclick="annotOpenEditor()">写批注</button>`;
+  tb.style.display = 'flex';
+  tb.style.left = Math.max(8, Math.min(x - 100, window.innerWidth - 230)) + 'px';
+  tb.style.top = Math.max(8, y - 54) + 'px';
+}
+
+async function annotQuick(color) { if (annotPending) await annotCommit(color, ''); }
+
+function annotOpenEditor() {
+  if (!annotPending) return;
+  const ed = document.getElementById('annotEditor');
+  const q = document.getElementById('annotQuote');
+  const inp = document.getElementById('annotInput');
+  const btn = ed.querySelector('.annot-btn.primary');
+  if (btn) { btn.textContent = '保存'; btn.onclick = annotSave; }
+  const del = document.getElementById('annotDelBtn');
+  if (del) del.style.display = 'none';
+  q.textContent = annotPending.text.length > 80 ? annotPending.text.slice(0, 80) + '…' : annotPending.text;
+  inp.value = '';
+  ed.style.display = 'flex';
+  inp.focus();
+  document.getElementById('annotToolbar').style.display = 'none';
+}
+
+function annotCancel() {
+  document.getElementById('annotEditor').style.display = 'none';
+  annotPending = null;
+}
+
+async function annotSave() {
+  const inp = document.getElementById('annotInput');
+  await annotCommit('yellow', inp ? inp.value : '');
+}
+
+async function annotCommit(color, note) {
+  const p = annotPending;
+  if (!p) return;
+  annotPending = null;
+  document.getElementById('annotEditor').style.display = 'none';
+  document.getElementById('annotToolbar').style.display = 'none';
+  try {
+    const r = await ComicAPI.addAnnotation(epubState.comic.id, {
+      chapter: epubState.currentChapter, text: p.text, note, color, occur: p.occur
+    });
+    if (r && r.annotation) epubState.annotations.push(r.annotation);
+    else await annotLoad();
+  } catch (e) { alert('保存失败：' + e.message); }
+  updateAnnotBadge(); renderAnnotList(); annotApplyHighlights();
+  try { document.getElementById('epubFrame').contentWindow.getSelection().removeAllRanges(); } catch (e) {}
+}
+
+function epubSwitchTab(tab) {
+  if (!epubState) return;
+  epubState.annotTab = tab;
+  const set = (id, on) => { const el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+  const act = (id, on) => { const el = document.getElementById(id); if (el) el.classList.toggle('active', on); };
+  set('epubToc', tab === 'toc');
+  set('epubSummary', tab === 'sum');
+  set('epubNotes', tab === 'note');
+  act('epubTabToc', tab === 'toc');
+  act('epubTabSum', tab === 'sum');
+  act('epubTabNote', tab === 'note');
+  if (tab === 'note') renderAnnotList();
+  if (tab === 'sum') loadChapterSummary();
+}
+
+// ── AI 章节总结 ──
+let sumCache = {};   // chapterIndex -> summary | null
+
+async function loadChapterSummary() {
+  const el = document.getElementById('epubSummary');
+  if (!el || !epubState) return;
+  const ch = epubState.currentChapter;
+  if (!(ch in sumCache)) {
+    el.innerHTML = '<div class="sum-loading">正在加载本章总结…</div>';
+    let s = null;
+    try { s = await ComicAPI.getSummary(epubState.comic.id, ch); } catch (e) { s = null; }
+    sumCache[ch] = s;
+  }
+  renderChapterSummary(sumCache[ch]);
+}
+
+function epubShowSummary() {
+  epubState.sidebarOpen = true;
+  const sb = document.getElementById('epubSidebar'); if (sb) sb.classList.add('open');
+  epubSwitchTab('sum');
+}
+
+function renderChapterSummary(s) {
+  const el = document.getElementById('epubSummary');
+  if (!el || !epubState) return;
+  const chTitle = (epubState.toc[epubState.currentChapter] || {}).title || ('第 ' + (epubState.currentChapter + 1) + ' 章');
+  if (!s) {
+    el.innerHTML = `<div class="sum-head">${escHtml(String(chTitle))}</div>
+      <div class="epub-note-empty">本章暂无 AI 总结。<br>（总结按章生成，已完成的章会出现在这里）</div>`;
+    return;
+  }
+  const H = [];
+  H.push(`<div class="sum-head">${escHtml(s.title || String(chTitle))}</div>`);
+  if (s.framework && s.framework.length) {
+    H.push('<div class="sum-sec"><div class="sum-sec-t">📐 知识框架</div>');
+    s.framework.forEach(f => {
+      H.push(`<div class="sum-fw"><div class="sum-fw-t">${escHtml(f.t || '')}</div>`);
+      if (f.items && f.items.length) H.push('<ul>' + f.items.map(i => `<li>${escHtml(i)}</li>`).join('') + '</ul>');
+      H.push('</div>');
+    });
+    H.push('</div>');
+  }
+  if (s.concepts && s.concepts.length) {
+    H.push('<div class="sum-sec"><div class="sum-sec-t">🔑 核心概念</div>');
+    s.concepts.forEach(c => H.push(`<div class="sum-cpt"><b>${escHtml(c.term || '')}</b>${escHtml(c.desc || '')}</div>`));
+    H.push('</div>');
+  }
+  if (s.statutes && s.statutes.length) {
+    H.push('<div class="sum-sec"><div class="sum-sec-t">⚖️ 重点法条</div>');
+    s.statutes.forEach(c => H.push(`<div class="sum-law"><span class="sum-law-n">${escHtml(c.law || '')}</span>${c.article ? `<span class="sum-law-a">${escHtml(c.article)}</span>` : ''}<div class="sum-law-d">${escHtml(c.note || '')}</div></div>`));
+    H.push('</div>');
+  }
+  if (s.qa && s.qa.length) {
+    H.push('<div class="sum-sec"><div class="sum-sec-t">💡 思考题思路</div>');
+    s.qa.forEach(q => H.push(`<div class="sum-qa"><div class="sum-q">Q：${escHtml(q.q || '')}</div><div class="sum-a">${escHtml(q.a || '')}</div></div>`));
+    H.push('</div>');
+  }
+  if (s.tips && s.tips.length) {
+    H.push('<div class="sum-sec"><div class="sum-sec-t">⚠️ 易错提醒</div><ul class="sum-tips">' + s.tips.map(t => `<li>${escHtml(t)}</li>`).join('') + '</ul></div>');
+  }
+  H.push('<div class="sum-foot">内容由 AI 依据教材整理，仅供复习参考，一切以教材原文为准</div>');
+  el.innerHTML = H.join('');
+}
+
+function epubShowAnnotations() {
+  epubState.sidebarOpen = true;
+  document.getElementById('epubSidebar').classList.add('open');
+  epubSwitchTab('note');
+}
+
+function renderAnnotList() {
+  const el = document.getElementById('epubNotes');
+  if (!el || !epubState) return;
+  const list = (epubState.annotations || []).slice()
+    .sort((a, b) => (a.chapter - b.chapter) || String(a.ts).localeCompare(String(b.ts)));
+  if (!list.length) { el.innerHTML = '<div class="epub-note-empty">还没有批注。选中正文里的文字即可高亮 / 写批注。</div>'; return; }
+  el.innerHTML = list.map(a => {
+    const chTitle = (epubState.toc[a.chapter] && epubState.toc[a.chapter].title) || ('第 ' + (a.chapter + 1) + ' 章');
+    return `<div class="epub-note-item" data-id="${a.id}">
+      <div class="epub-note-head">
+        <span class="epub-note-dot" style="background:${annotColorHex(a.color)}"></span>
+        <span class="epub-note-ch">${escHtml(String(chTitle).slice(0, 20))}</span>
+        <button class="epub-note-del" onclick="annotDelete('${a.id}')" title="删除">✕</button>
+      </div>
+      <div class="epub-note-quote" onclick="annotGoto('${a.id}')">${escHtml(a.text.slice(0, 120))}</div>
+      ${a.note ? `<div class="epub-note-text">${escHtml(a.note)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function annotGoto(id) {
+  const a = (epubState.annotations || []).find(x => x.id === id);
+  if (!a) return;
+  if (a.chapter !== epubState.currentChapter) {
+    epubState.currentChapter = a.chapter;
+    loadEpubChapter();
+  } else {
+    annotApplyHighlights();
+    const frame = document.getElementById('epubFrame');
+    const mk = frame && frame.contentDocument && frame.contentDocument.querySelector('mark[data-annot="' + id + '"]');
+    if (mk && mk.scrollIntoView) mk.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+  epubState.sidebarOpen = false;
+  const sb = document.getElementById('epubSidebar'); if (sb) sb.classList.remove('open');
+}
+
+function annotShowEditorFor(id) {
+  const a = (epubState.annotations || []).find(x => x.id === id);
+  if (!a) return;
+  const ed = document.getElementById('annotEditor');
+  if (!ed) return;
+  window._annotEditingId = id;
+  const q = document.getElementById('annotQuote'), inp = document.getElementById('annotInput');
+  q.textContent = a.text.length > 80 ? a.text.slice(0, 80) + '…' : a.text;
+  inp.value = a.note || '';
+  const btn = ed.querySelector('.annot-btn.primary');
+  if (btn) { btn.textContent = '更新'; btn.onclick = annotUpdateExisting; }
+  const del = document.getElementById('annotDelBtn');
+  if (del) del.style.display = '';
+  ed.style.display = 'flex';
+}
+
+// 编辑框里的「删除高亮」
+async function annotDeleteCurrent() {
+  const id = window._annotEditingId;
+  document.getElementById('annotEditor').style.display = 'none';
+  annotPending = null;
+  if (id) await annotDelete(id);
+  window._annotEditingId = null;
+}
+
+// 找到某个节点所属的批注 id（若在已高亮块内）
+function annotFindAt(node) {
+  let el = node && node.nodeType === 1 ? node : (node ? node.parentNode : null);
+  while (el) {
+    if (el.getAttribute && el.getAttribute('data-annot')) return el.getAttribute('data-annot');
+    el = el.parentNode;
+  }
+  return null;
+}
+
+async function annotUpdateExisting() {
+  const id = window._annotEditingId;
+  if (!id) return;
+  const inp = document.getElementById('annotInput');
+  await ComicAPI.updateAnnotation(epubState.comic.id, id, { note: inp ? inp.value : '' }).catch(() => {});
+  document.getElementById('annotEditor').style.display = 'none';
+  const btn = document.querySelector('#annotEditor .annot-btn.primary');
+  if (btn) { btn.textContent = '保存'; btn.onclick = annotSave; }
+  window._annotEditingId = null;
+  await annotLoad();
+}
+
+async function annotDelete(id) {
+  const a = (epubState.annotations || []).find(x => x.id === id);
+  const msg = (a && a.note) ? '该高亮带有批注，确认删除？' : '确认取消这处高亮？';
+  if (!confirm(msg)) return;
+  await ComicAPI.deleteAnnotation(epubState.comic.id, id).catch(() => {});
+  epubState.annotations = (epubState.annotations || []).filter(x => x.id !== id);
+  updateAnnotBadge(); renderAnnotList(); annotApplyHighlights();
+}
+
+// 工具条上的「取消高亮」（选中已高亮文字时出现）
+async function annotUnhighlight(id) {
+  const tb = document.getElementById('annotToolbar');
+  if (tb) tb.style.display = 'none';
+  annotPending = null;
+  await annotDelete(id);
+  try { document.getElementById('epubFrame').contentWindow.getSelection().removeAllRanges(); } catch (e) {}
+}
 
 function closeEpubReader() {
   const closingId = epubState ? epubState.comic.id : null;

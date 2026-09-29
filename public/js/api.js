@@ -80,6 +80,35 @@ const ComicAPI = {
     return res.json();
   },
 
+  // ── 批注 / 笔记 ──
+  async getAnnotations(id) {
+    const res = await api(`/api/comic/${id}/annotations`);
+    return res.json();
+  },
+  async addAnnotation(id, payload) {
+    const res = await api(`/api/comic/${id}/annotations`, { method: 'POST', body: payload });
+    return res.json();
+  },
+  async updateAnnotation(id, aid, payload) {
+    const res = await api(`/api/comic/${id}/annotations/${aid}`, { method: 'PATCH', body: payload });
+    return res.json();
+  },
+  async deleteAnnotation(id, aid) {
+    const res = await api(`/api/comic/${id}/annotations/${aid}`, { method: 'DELETE' });
+    return res.json();
+  },
+
+  // ── AI 章节总结 ──
+  async getSummary(id, chapter) {
+    const res = await api(`/api/comic/${id}/summary/${chapter}`);
+    if (!res.ok) return null;
+    return res.json();
+  },
+  async getAllSummaries(id) {
+    const res = await api(`/api/comic/${id}/summary`);
+    return res.json();
+  },
+
   async createShelf(name) {
     const res = await api('/api/shelves', { method: 'POST', body: { name } });
     return res.json();

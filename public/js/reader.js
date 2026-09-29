@@ -1,32 +1,20 @@
-/**
- * 漫画阅读器
- * 支持 PDF（pdf.js）、CBZ/CBR（逐页图片）
- * 双页模式、RTL（漫画方向）、缩放、键盘快捷键
- */
+// Reader for PDF (pdf.js) and CBZ/CBR/EPUB: paged and scrolling modes, zoom, gestures, shortcuts.
 
 let readerState = null;
 
-// pdf.js 全局引用
 let pdfjsLib = null;
 let pdfDoc = null;
-let pdfState = null;  // PDF 章节目录状态（仿 epubState）
-
-// ── 打开阅读器 ──
+let pdfState = null;
 
 async function openReader(comic, startPage) {
-  // 防御：上一本若经由异常退出路径（物理返回键 / 手势）残留了 PDF 文档实例，
-  // 这里必须先销毁，否则 loadPdfPage 会因 `if (!pdfDoc)` 跳过加载 → 复用旧文档，
-  // 表现为「看完一本，下一本显示的还是上一本 / 页码越界加载失败」。
+  // Destroy any leftover pdf.js document first, or loadPdfPage silently reuses the previous book.
   releasePdfDoc();
 
-  // EPUB 用专用阅读器
   if (comic.ext === 'epub') {
     return openEpubReader(comic);
   }
-  // 更新 URL hash（深链：支持前进后退/分享/收藏）
   try { history.pushState(null, '', '#reader/' + encodeURIComponent(String(comic.sourceId || comic.id))); } catch (e) {}
 
-  // 获取信息
   let info = comic;
   if (!info.pageCount && info.ext === 'pdf') {
     try {
@@ -35,13 +23,10 @@ async function openReader(comic, startPage) {
     } catch {}
   }
 
-  // PDF 章节目录状态（详情页点击某章进入时，起始页优先于阅读进度）
   pdfState = comic.ext === 'pdf'
     ? { toc: [], hasToc: false, sidebarOpen: false, tocLoaded: false }
     : null;
 
-  // 【2026-09-22】进入阅读器：清理可能残留的旧胶囊，随后按「顶栏可见」的初始状态收起它。
-  // 胶囊仅在用户点击空白折叠顶栏后才出现，作为此时的唯一返回入口。
   if (typeof removeFloatingBackButton === 'function') removeFloatingBackButton();
   if (typeof setFloatingBackVisible === 'function') setFloatingBackVisible(false);
 
@@ -50,27 +35,21 @@ async function openReader(comic, startPage) {
     currentPage: startPage || info.progress?.page || 1,
     totalPages: info.pageCount || 0,
     zoom: 'fit-width',
-    mode: info.ext === 'pdf' ? 'scroll' : 'single',  // PDF 默认滚动，CBZ 默认单页
+    mode: info.ext === 'pdf' ? 'scroll' : 'single',
     direction: 'ltr',
     bookmarked: info.progress?.bookmarked || false,
     controlsVisible: true,
-    renderedPages: new Set(),  // 已渲染的页码
+    renderedPages: new Set(),
     scrollObserver: null,
   };
 
-  // 构建阅读器 UI
   buildReaderUI();
 
-  // 加载内容
   await loadPage();
 }
 
-// ── 构建阅读器 DOM ──
-
 function buildReaderUI() {
   const container = document.getElementById('reader');
-  // 清除上一次「瞬时退出」遗留的动画态：innerHTML 重建不会重置容器自身的 class，
-  // 若残留 .exiting，新打开的书会继承退出态样式而不可见。
   container.classList.remove('exiting');
   const isScroll = readerState.mode === 'scroll';
 
@@ -127,15 +106,12 @@ function buildReaderUI() {
   updateModeBtn();
   updateDirectionBtn();
 
-  // PDF 目录：DOM 重建后恢复「☰」按钮与列表（切换模式会重走这里）
   if (pdfState && pdfState.hasToc) {
     const btn = document.getElementById('pdfBtnToc');
     if (btn) btn.style.display = '';
     renderPdfToc();
   }
 }
-
-// ── 加载页面 ──
 
 async function loadPage() {
   if (readerState.mode === 'scroll') {
@@ -167,7 +143,6 @@ async function loadPage() {
 }
 
 async function loadPdfPage(pageNum, mode) {
-  // Wait for pdfjs to be ready
   if (!pdfjsLib) {
     for (var i = 0; i < 50; i++) {
       await new Promise(r => setTimeout(r, 200));
@@ -191,7 +166,6 @@ async function loadPdfPage(pageNum, mode) {
   const viewportEl = document.getElementById('readerViewport');
 
   if (mode === 'double' && pageNum < readerState.totalPages) {
-    // 双页：当前页 + 下一页
     const [page1, page2] = await Promise.all([
       pdfDoc.getPage(pageNum),
       pdfDoc.getPage(pageNum + 1)
@@ -200,7 +174,6 @@ async function loadPdfPage(pageNum, mode) {
     const canvas1 = await renderPdfPageToCanvas(page1, 'double');
     const canvas2 = await renderPdfPageToCanvas(page2, 'double');
 
-    // 清除旧 canvas
     viewportEl.querySelectorAll('canvas').forEach(c => c.remove());
 
     if (readerState.direction === 'rtl') {
@@ -211,7 +184,6 @@ async function loadPdfPage(pageNum, mode) {
       viewportEl.appendChild(canvas2);
     }
   } else {
-    // 单页
     const page = await pdfDoc.getPage(pageNum);
     const canvas = await renderPdfPageToCanvas(page, 'single');
     viewportEl.querySelectorAll('canvas').forEach(c => c.remove());
@@ -259,7 +231,6 @@ async function loadCbzPage(pageNum) {
   const img = document.createElement('img');
   img.className = 'page-image';
   const comic = readerState.comic;
-  // 在线漫画：图片走 /api/online/img 代理（后端拉取 + 反乱序）
   if (comic.online && Array.isArray(comic.images)) {
     const rawUrl = comic.images[pageNum - 1];
     img.src = `/api/online/img?url=${encodeURIComponent(rawUrl)}&token=${encodeURIComponent(getToken())}`;
@@ -275,7 +246,6 @@ async function loadCbzPage(pageNum) {
   viewportEl.querySelectorAll('img.page-image').forEach(el => el.remove());
   viewportEl.appendChild(img);
 
-  // 更新总页数（首次加载时获取）；在线漫画已在 openReader 前设置好
   if (!readerState.totalPages) {
     if (comic.online && Array.isArray(comic.images)) {
       readerState.totalPages = comic.images.length;
@@ -287,8 +257,6 @@ async function loadCbzPage(pageNum) {
     }
   }
 }
-
-// ── 滚动阅读模式 ────────────────────────────────────
 
 async function loadScrollMode() {
   const viewport = document.getElementById('readerViewport');
@@ -328,25 +296,22 @@ async function loadScrollMode() {
 
   if (loading) loading.style.display = 'none';
 
-  // 懒加载 + 卸载（防 200 页 Canvas 堆积导致移动端 OOM）
+  // Unload canvases far outside the viewport; hundreds of live pages will OOM a phone.
   if (readerState.scrollObserver) readerState.scrollObserver.disconnect();
   readerState.scrollObserver = new IntersectionObserver((entries) => {
     for (const entry of entries) {
       const pn = parseInt(entry.target.dataset.page);
       if (entry.isIntersecting) {
-        // 进入可视区 + 缓冲区：若未渲染则绘制 Canvas
         if (!readerState.renderedPages.has(pn)) {
           readerState.renderedPages.add(pn);
           renderScrollPage(pn);
         }
       } else {
-        // 离开可视区 + 缓冲区（2 屏外）：卸载 Canvas 释放显存
         if (readerState.renderedPages.has(pn)) {
           const el = document.getElementById('scroll-page-' + pn);
           if (el) {
             const c = el.querySelector('canvas');
             if (c) {
-              // 强迫 WebKit (iOS Safari) 立即释放 GPU 显存区块
               const ctx = c.getContext('2d');
               ctx && ctx.clearRect && ctx.clearRect(0, 0, 1, 1);
               c.width = 0;
@@ -360,7 +325,6 @@ async function loadScrollMode() {
     }
   }, { rootMargin: '800px 0px' });
 
-  // 前 2 页立即渲染
   document.querySelectorAll('.scroll-page').forEach(el => {
     readerState.scrollObserver.observe(el);
     const pn = parseInt(el.dataset.page);
@@ -403,7 +367,6 @@ async function renderScrollPage(pageNum) {
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    // 每页占满一屏：canvas 自适应 .scroll-page 容器（max 100% + contain 保持比例）
     canvas.style.maxWidth = '100%';
     canvas.style.maxHeight = '100%';
     canvas.style.width = 'auto';
@@ -444,8 +407,7 @@ function debounce(fn, ms) {
   return function() { clearTimeout(t); t = setTimeout(fn, ms); };
 }
 
-// iOS 26 对 scroll-snap-stop:always 兼容不稳定，惯性滑动仍可能飞过多页。
-// 兜底：滚动停止后，把容器吸附到离视口顶最近的 .scroll-page，确保一次只停在一页。
+// iOS does not honour scroll-snap-stop reliably, so snap to the nearest page on scroll end.
 function attachScrollSnapFallback() {
   const vp = document.getElementById('readerViewport');
   if (!vp) return;
@@ -466,7 +428,6 @@ function attachScrollSnapFallback() {
         const dist = Math.abs(top);
         if (dist < nearestDist) { nearestDist = dist; nearest = p; }
       });
-      // 仅在未对齐（>2px）时强制吸附，避免无谓抖动
       if (nearest && nearestDist > 2) {
         nearest.scrollIntoView({ behavior: 'auto' });
       }
@@ -475,8 +436,6 @@ function attachScrollSnapFallback() {
   vp.addEventListener('scroll', handler, { passive: true });
   readerState._snapHandler = handler;
 }
-
-// ── 翻页 ──
 
 function nextPage() {
   const maxPage = readerState.totalPages || 99999;
@@ -501,7 +460,6 @@ function prevPage() {
 function jumpToPage(val) {
   const page = parseInt(val, 10);
   if (page >= 1 && page <= (readerState.totalPages || 99999)) {
-    // 双页模式下确保从奇数页开始
     if (readerState.mode === 'double' && page % 2 === 0) {
       readerState.currentPage = page - 1;
     } else {
@@ -510,8 +468,6 @@ function jumpToPage(val) {
     loadPage();
   }
 }
-
-// ── UI 更新 ──
 
 function updateUI() {
   const slider = document.getElementById('pageSlider');
@@ -543,8 +499,6 @@ function updateDirectionBtn() {
   if (btn) btn.textContent = readerState.direction === 'rtl' ? '⇦' : '⇄';
 }
 
-// ── 保存进度 ──
-
 function saveProgress() {
   if (!readerState) return;
   ComicAPI.saveProgress(
@@ -554,8 +508,6 @@ function saveProgress() {
   ).catch(() => {});
 }
 
-// ── 切换功能 ──
-
 function toggleBookmark() {
   readerState.bookmarked = !readerState.bookmarked;
   updateBookmarkBtn();
@@ -563,7 +515,6 @@ function toggleBookmark() {
 }
 
 function toggleMode() {
-  // 滚动 ↔ 翻页
   if (readerState.mode === 'scroll') {
     readerState.mode = 'single';
   } else if (readerState.mode === 'single') {
@@ -575,8 +526,7 @@ function toggleMode() {
   if (readerState.scrollObserver) readerState.scrollObserver.disconnect();
   readerState.renderedPages.clear();
 
-  // 复用已加载的 pdfDoc：page.render 会按新 viewport 重绘，无需重新 getDocument。
-  // （原实现置 null 会让每次切换模式/缩放都重新下载整个 PDF，大文件下极卡）
+  // Reuse the loaded pdfDoc and redraw; resetting it re-downloads the entire PDF.
 
   updateModeBtn();
   buildReaderUI();
@@ -595,14 +545,13 @@ function toggleDirection() {
   }
 
   if (readerState.comic.ext === 'pdf' && readerState.mode === 'double') {
-    loadPage();  // 复用 pdfDoc，仅重绘左右顺序
+    loadPage();
   }
 }
 
 function changeZoom(zoom) {
   readerState.zoom = zoom;
   showZoomIndicator(zoom);
-  // 复用 pdfDoc，仅按新缩放重绘（不再重新下载整个 PDF）
   loadPage();
 }
 
@@ -621,11 +570,7 @@ function showZoomIndicator(zoom) {
   el._timer = setTimeout(() => el.classList.remove('show'), 1200);
 }
 
-// ── 关闭阅读器 ──
-
-// 释放 pdf.js 文档实例（终止 worker、清页面缓存）。
-// 仅置 null 而不 destroy 会让文档、worker 与已请求的分块数据常驻内存，
-// 安卓 WebView 下连开两本大 PDF 就会吃满内存。
+// Destroy the document on close: dropping the reference keeps worker and chunks in memory.
 function releasePdfDoc() {
   if (!pdfDoc) return;
   try { pdfDoc.destroy(); } catch (e) {}
@@ -635,9 +580,8 @@ function releasePdfDoc() {
 function closeReader() {
   const closingId = readerState ? readerState.comic.id : null;
   const wasOnline = !!(readerState && readerState.comic.online);
-  if (!wasOnline) saveProgress(); // 在线漫画不保存本地进度
+  if (!wasOnline) saveProgress();
   if (readerState && readerState.scrollObserver) readerState.scrollObserver.disconnect();
-  // 清掉悬浮返回胶囊（历史版本在此路径上遗漏，会让它在详情页残留成第二个 ←）
   if (typeof removeFloatingBackButton === 'function') removeFloatingBackButton();
   releasePdfDoc();
   pdfState = null;
@@ -649,17 +593,13 @@ function closeReader() {
   document.body.classList.remove('reader-mode');
 
   if (wasOnline) {
-    // 在线阅读退出 → 直接回到在线详情页（章节列表），不碰书架
     window._libraryNeedsRefresh = false;
     switchPage('detail');
     return;
   }
 
-  // 标记需要刷新书架数据（进度已变，"继续阅读"需重排）
   window._libraryNeedsRefresh = true;
 
-  // 退出阅读器 → 回到同系列详情页（而非书架顶部），符合正常返回逻辑
-  // 恢复 URL hash 到返回页面（replaceState 不污染历史）
   try {
     const backTab = closingId && typeof showDetailForComic === 'function' ? 'detail' : 'comic';
     history.replaceState(null, '', '#' + backTab);
@@ -668,11 +608,7 @@ function closeReader() {
   else loadLibraryData();
 }
 
-// 供 app.js 的「瞬时退出」(closeReaderFast) 复用核心收尾逻辑：
-// 无论走哪条退出路径，pdfDoc / readerState 都必须被重置。
 window.__coreCloseReader = closeReader;
-
-// ── 触屏手势：双指缩放 + 双击放大 ──────────────
 
 let touchState = {
   active: false, startDist: 0, startZoom: '',
@@ -682,14 +618,11 @@ let touchState = {
 document.addEventListener('touchstart', (e) => {
   if (!readerState) return;
 
-  // 记录单指位置（双击判断用）
   if (e.touches.length === 1) {
     touchState.tapX = e.touches[0].clientX;
     touchState.tapY = e.touches[0].clientY;
   }
 
-  // 双指缩放开始（touch-action: pan-y 已禁用原生缩放，无需 preventDefault，
-  // 否则非 passive 监听会拖垮 iOS 的滚动平滑度）
   if (e.touches.length === 2) {
     touchState.active = true;
     touchState.startDist = getTouchDist(e.touches);
@@ -710,12 +643,11 @@ document.addEventListener('touchmove', (e) => {
 document.addEventListener('touchend', (e) => {
   if (!readerState) return;
 
-  // ── 双击检测（touchend 阶段，手指离开后判断） ──
   if (!touchState.active && e.changedTouches.length === 1) {
     const t = e.changedTouches[0];
     const dx = Math.abs(t.clientX - touchState.tapX);
     const dy = Math.abs(t.clientY - touchState.tapY);
-    const moved = dx > 20 || dy > 20; // 滑动超过 20px 不算点击
+    const moved = dx > 20 || dy > 20;
 
     if (!moved) {
       const now = Date.now();
@@ -729,7 +661,6 @@ document.addEventListener('touchend', (e) => {
     }
   }
 
-  // ── 双指缩放结束 ──
   if (!touchState.active) return;
   touchState.active = false;
 
@@ -776,7 +707,6 @@ function handleDoubleTap(touch) {
 }
 
 function reloadContent() {
-  // 复用已加载的 pdfDoc，仅重建渲染容器（缩放/双击放大走这里）
   if (readerState.mode === 'scroll') {
     readerState.renderedPages.clear();
     const vp = document.getElementById('readerViewport');
@@ -799,8 +729,6 @@ function zoomLabel(z) {
   if (z === 'fit-height') return '适应高度';
   return z + '%';
 }
-
-// ── 键盘快捷键 ──
 
 document.addEventListener('keydown', (e) => {
   if (!readerState) return;
@@ -870,11 +798,8 @@ function toggleFullscreen() {
   }
 }
 
-// ── 点击切换控制栏 ──
-
 document.addEventListener('click', (e) => {
   if (!readerState) return;
-  // 不处理按钮和滑块的点击
   if (e.target.closest('button') || e.target.closest('input')) return;
 
   readerState.controlsVisible = !readerState.controlsVisible;
@@ -883,21 +808,15 @@ document.addEventListener('click', (e) => {
   if (readerState.controlsVisible) {
     topbar?.classList.remove('hidden');
     bottombar?.classList.remove('hidden');
-    // 【2026-09-22】顶栏可见 → 收起悬浮返回键，避免出现两个重叠的 ←
     if (typeof setFloatingBackVisible === 'function') setFloatingBackVisible(false);
   } else {
     topbar?.classList.add('hidden');
     bottombar?.classList.add('hidden');
-    // 【2026-09-22】顶栏已折叠 → 显示悬浮返回键，否则用户没有任何返回入口
     if (typeof setFloatingBackVisible === 'function') setFloatingBackVisible(true);
   }
 });
 
-// ── 加载 pdf.js（本地优先，CDN 兜底）──
-// 修复：原来死磕 cdnjs。NAS 断外网、或手机连的是纯内网 WiFi 时，
-// PDF 永远停在"加载中"，而且控制台只有一行 load failed，很难查。
-// 现在先用服务端自带的 /vendor/pdfjs 副本，拿不到再回退 CDN。
-// 另外原来同时用 <script type=module> + import()，等于把 1.7MB 下了两遍。
+// pdf.js is served locally first; the CDN fallback only matters when the NAS is offline.
 (function loadPdfJs() {
   var LOCAL = '/vendor/pdfjs';
   var CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38';
@@ -923,12 +842,9 @@ document.addEventListener('click', (e) => {
     });
 })();
 
-// ── EPUB 阅读器 ────────────────────────────────────
-
 let epubState = null;
 
 async function openEpubReader(comic) {
-  // 获取目录
   let toc = [];
   try {
     const res = await api(`/api/comic/${comic.id}/epub/toc`);
@@ -944,18 +860,17 @@ async function openEpubReader(comic) {
     currentChapter: 0,
     fontSize: 18,
     lineHeight: 1.8,
-    fontFamily: 'serif',   // serif | sans
-    theme: 'dark',         // dark | sepia | light
+    fontFamily: 'serif',
+    theme: 'dark',
     sidebarOpen: false,
     controlsVisible: true,
-    annotations: [],       // 本书全部批注（跨章节）
-    annotTab: 'toc',       // 侧栏页签：toc | note
-    selColor: 'yellow',    // 当前批注颜色
+    annotations: [],
+    annotTab: 'toc',
+    selColor: 'yellow',
   };
 
-  sumCache = {};   // 换书时清空 AI 总结缓存
+  sumCache = {};
 
-  // 尝试恢复进度
   try {
     const info = await ComicAPI.getComicInfo(comic.id);
     if (info.progress && info.progress.page > 0) {
@@ -1068,7 +983,7 @@ async function loadEpubChapter() {
   renderEpubToc();
   updateEpubBookmarkBtn();
   annotLoad();
-  if (epubState.annotTab === 'sum') loadChapterSummary();   // 切章时同步刷新总结
+  if (epubState.annotTab === 'sum') loadChapterSummary();
   ComicAPI.saveProgress(epubState.comic.id, epubState.currentChapter + 1, epubState.toc.length).catch(() => {});
 }
 
@@ -1120,8 +1035,6 @@ function postEpubMsg(msg) {
 function epubToggleBookmark() { epubState.comic.bookmarked = !epubState.comic.bookmarked; updateEpubBookmarkBtn(); ComicAPI.toggleBookmark(epubState.comic.id).catch(() => {}); }
 function updateEpubBookmarkBtn() { const btn = document.getElementById('epubBtnBookmark'); if (btn) btn.textContent = epubState.comic.bookmarked ? '★' : '☆'; }
 
-// ── 批注 / 笔记（选中文字 → 高亮 + 批注；存服务端，跨设备同步） ──
-
 function annotColorHex(c) {
   return { yellow: '#ffe066', green: '#8ce99a', blue: '#74c0fc', pink: '#f783ac' }[c] || '#ffe066';
 }
@@ -1159,7 +1072,7 @@ function annotApplyHighlights() {
     .forEach(a => annotWrapText(body, a.text, a.occur || 0, a.id, a.color, a.note));
 }
 
-// 按「整个文本流」查找第 occur 次出现的 text，返回 Range（可跨节点、忽略空白差异）
+// Locate the Nth occurrence in the flattened text flow so anchors survive markup changes.
 function annotFindRange(root, text, occur) {
   if (!text) return null;
   const doc = root.ownerDocument;
@@ -1201,7 +1114,6 @@ function annotFindRange(root, text, occur) {
   return r;
 }
 
-// 统计「选区起点之前」出现过几次（得出 0 基序号）
 function annotCountBefore(root, text, node, offset) {
   const doc = root.ownerDocument;
   const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
@@ -1272,7 +1184,6 @@ function annotOnSelect() {
 
   annotPending = { text, occur };
   window._annotEditingId = null;
-  // 选区若落在已有高亮内 → 提供「取消高亮」
   let insideId = null;
   try { insideId = annotFindAt(sel.getRangeAt(0).startContainer); } catch (e) {}
   tb.innerHTML = ['yellow', 'green', 'blue', 'pink'].map(c =>
@@ -1345,8 +1256,7 @@ function epubSwitchTab(tab) {
   if (tab === 'sum') loadChapterSummary();
 }
 
-// ── AI 章节总结 ──
-let sumCache = {};   // chapterIndex -> summary | null
+let sumCache = {};
 
 async function loadChapterSummary() {
   const el = document.getElementById('epubSummary');
@@ -1467,7 +1377,6 @@ function annotShowEditorFor(id) {
   ed.style.display = 'flex';
 }
 
-// 编辑框里的「删除高亮」
 async function annotDeleteCurrent() {
   const id = window._annotEditingId;
   document.getElementById('annotEditor').style.display = 'none';
@@ -1476,7 +1385,6 @@ async function annotDeleteCurrent() {
   window._annotEditingId = null;
 }
 
-// 找到某个节点所属的批注 id（若在已高亮块内）
 function annotFindAt(node) {
   let el = node && node.nodeType === 1 ? node : (node ? node.parentNode : null);
   while (el) {
@@ -1507,7 +1415,6 @@ async function annotDelete(id) {
   updateAnnotBadge(); renderAnnotList(); annotApplyHighlights();
 }
 
-// 工具条上的「取消高亮」（选中已高亮文字时出现）
 async function annotUnhighlight(id) {
   const tb = document.getElementById('annotToolbar');
   if (tb) tb.style.display = 'none';
@@ -1523,7 +1430,6 @@ function closeEpubReader() {
   document.getElementById('reader').innerHTML = '';
   document.body.classList.remove('reader-mode');
   window._libraryNeedsRefresh = true;
-  // 恢复 URL hash 到返回页面（replaceState 不污染历史）
   try {
     const backTab = closingId && typeof showDetailForComic === 'function' ? 'detail' : 'comic';
     history.replaceState(null, '', '#' + backTab);
@@ -1541,8 +1447,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ── PDF 章节目录（仿 EPUB 侧边栏，前端 pdfDoc.getOutline） ──
-
 async function loadPdfOutline() {
   if (!pdfDoc || !pdfState || pdfState.tocLoaded) return;
   pdfState.tocLoaded = true;
@@ -1558,7 +1462,7 @@ async function loadPdfOutline() {
       if (btn) btn.style.display = '';
       renderPdfToc();
     }
-  } catch (e) { /* 静默：无书签 / 解析失败不阻塞阅读 */ }
+  } catch (e) {  }
 }
 
 async function flattenPdfOutline(items, level, acc) {
@@ -1575,7 +1479,7 @@ async function resolvePdfDest(dest) {
     let resolved = dest;
     if (typeof dest === 'string') resolved = await pdfDoc.getDestination(dest);
     if (Array.isArray(resolved) && resolved[0]) {
-      return (await pdfDoc.getPageIndex(resolved[0])) + 1;  // 1-based 页码
+      return (await pdfDoc.getPageIndex(resolved[0])) + 1;
     }
     return 0;
   } catch { return 0; }
@@ -1622,7 +1526,6 @@ function pdfToggleSidebar(force) {
   if (sb) sb.classList.toggle('open', pdfState.sidebarOpen);
 }
 
-// ── 爱心点赞 ──
 let likeState = { likes: 0, liked: false };
 
 function toggleLikeComic() {

@@ -1,5 +1,7 @@
 # 在线模块技术文档（可插拔多源）
 
+> English version: [ONLINE_SOURCES.en.md](ONLINE_SOURCES.en.md)
+
 > 适用对象：想**部署**阅读器并开启在线漫画，或想**自己接入一个新站点**的开发者。
 > 本地漫画库（扫描 PDF/CBZ/EPUB）请见主 `README.md`，本文只讲「在线源」部分。
 

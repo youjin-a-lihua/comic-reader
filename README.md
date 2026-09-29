@@ -1,5 +1,7 @@
 # Comic Reader · 通用漫画阅读器
 
+> English version: [README.en.md](README.en.md)
+
 一个自托管的漫画/小说阅读器，带两种内容来源：
 
 - **本地库**：扫描服务器上的 PDF / CBZ / CBR / EPUB，自动生成封面、记录阅读进度、收藏与点赞。
@@ -143,6 +145,12 @@ npm start            # 或 npm run dev（监听热重载）
 ---
 
 ## 📦 更新记录
+
+### v1.4.1 (2026-09-29)
+
+**整理 / 文档**
+- 🧹 精简全库注释：去掉带日期的改动清单、复述代码的注释与装饰性分隔线，注释密度 9.8% → 0.8%；保留下来的说明改为英文
+- 📄 文档补齐英文版：[README.en.md](README.en.md) · [ANNOTATIONS.en.md](ANNOTATIONS.en.md) · [ONLINE_SOURCES.en.md](ONLINE_SOURCES.en.md)
 
 ### v1.4.0 (2026-09-24)
 

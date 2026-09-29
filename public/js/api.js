@@ -1,7 +1,4 @@
-/**
- * 前端 API 封装
- * 自动处理 JWT token 和错误
- */
+// Thin fetch wrapper over the REST API, handling the JWT.
 
 const API_BASE = window.location.origin;
 
@@ -9,7 +6,7 @@ function getToken() {
   return localStorage.getItem('fn_comic_token');
 }
 
-// 全局请求超时：避免磁盘 I/O 卡顿（HC620/sda 偶发 EIO）时前端永远 pending
+// Global timeout: a stalled disk must not leave the UI pending forever.
 const API_TIMEOUT_MS = 20000;
 
 async function api(path, options = {}) {
@@ -48,7 +45,6 @@ async function api(path, options = {}) {
   return res;
 }
 
-// 便捷 API 方法
 const ComicAPI = {
   login(username, password) {
     return fetch(`${API_BASE}/api/login`, {
@@ -80,7 +76,6 @@ const ComicAPI = {
     return res.json();
   },
 
-  // ── 批注 / 笔记 ──
   async getAnnotations(id) {
     const res = await api(`/api/comic/${id}/annotations`);
     return res.json();
@@ -98,7 +93,6 @@ const ComicAPI = {
     return res.json();
   },
 
-  // ── AI 章节总结 ──
   async getSummary(id, chapter) {
     const res = await api(`/api/comic/${id}/summary/${chapter}`);
     if (!res.ok) return null;
@@ -182,18 +176,15 @@ const ComicAPI = {
     const res = await api('/api/astrbot/config', { method: 'POST', body: cfg });
     return res.json();
   },
-  // opts: { command } 直接透传完整指令，或兼容旧的 { query, type }
   async sendAstrbotCommand(opts) {
     const res = await api('/api/astrbot/command', { method: 'POST', body: opts });
     return res.json();
   },
-  // 轮询 AstrBot 会话历史（详情/进度/图片）
   async getAstrbotSession(sessionId) {
     const res = await api('/api/astrbot/session/' + encodeURIComponent(sessionId), { method: 'GET' });
     return res.json();
   },
 
-  // 在线下载历史（持久化，重启不丢）
   async getDownloads(limit, offset) {
     const q = [];
     if (limit) q.push('limit=' + encodeURIComponent(limit));
@@ -202,19 +193,16 @@ const ComicAPI = {
     return res.json();
   },
 
-  // 创建在线下载任务（批量时 episodes 传多个）
   async startOnlineDownload(payload) {
     const res = await api('/api/online/download', { method: 'POST', body: payload });
     return { ok: res.ok, data: await res.json().catch(() => ({})) };
   },
 
-  // 查询下载任务进度
   async getDownloadJob(jobId) {
     const res = await api('/api/online/download/' + encodeURIComponent(jobId));
     return res.json();
   },
 
-  // 在线相册详情（含 chapters 列表）——整本下载时先拿它
   async getOnlineAlbum(id, source) {
     const qs = source ? '?source=' + encodeURIComponent(source) : '';
     const res = await api('/api/online/album/' + encodeURIComponent(id) + qs);

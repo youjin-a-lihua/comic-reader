@@ -1,20 +1,9 @@
-/**
- * fn-comic-reader · iOS 26 设计语言
- * 四 Tab：漫画 / 小说 / 全部 / 搜索
- * 玻璃拟态主题 · 自定义书架
- */
+// Shelf front end: tabs, grids, detail view, comments, online sources and downloads.
 
 let allSeries = { comic: [], novel: [], all: [] };
-// 「最近添加」独立存放，不塞进 allSeries。
-// allSeries 的契约是「tab 名 → 数组」，有多处代码在遍历它：
-//   allSeriesArrays().flatMap(s => s.flatMap(x => x.items))
-// 一旦混入非数组值，s.flatMap 会抛 TypeError，整条链路中断
-// （典型表现：点击本地书卡片毫无反应，因为 openComicById 就是被它打断的）。
+// allSeries' contract is "tab name -> array"; keep anything else out or flatMap throws.
 let recentData = null;
 
-// 遍历 allSeries 时统一走这里，过滤掉任何意外混入的非数组值。
-// 便宜的一层防御：这类「共享结构被污染」的故障在 UI 上只表现为「点了没反应」，
-// 排查成本很高，不如在源头挡住。
 function allSeriesArrays() {
   return Object.values(allSeries).filter(Array.isArray);
 }
@@ -22,8 +11,8 @@ let allComics = [];
 let currentDetailComic = null;
 let currentTab = 'comic';
 let detailBackPage = 'comic';
-let detailBackTag = null;      // 打开详情时所在的标签筛选视图
-let detailBackScroll = 0;    // 打开详情时列表滚动位置
+let detailBackTag = null;
+let detailBackScroll = 0;
 let selectedTag = null;
 let comicSortMode = localStorage.getItem('comic_sort') || 'series';
 let novelSortMode = localStorage.getItem('novel_sort') || 'series';
@@ -35,11 +24,10 @@ let astrbotAddress = '';
 let activeFilters = new Set();
 let allTags = [];
 let userShelves = [];
-let canDeleteComic = false; // 控制面板「允许删除漫画」开关（仅管理员拉取）
+let canDeleteComic = false;
 
 function $(id) { return document.getElementById(id); }
 
-// ── 主题 ──
 const THEMES = ['dark', 'light'];
 let themeIdx = 0;
 
@@ -63,12 +51,10 @@ function cycleTheme() {
   applyTheme();
 }
 
-// ── 初始化 ──
 async function initApp() {
   const token = getToken();
   if (!token) { window.location.href = '/'; return; }
   initTheme();
-  // 初始化 Gemini 双轨布局（防止 body 无 data-layout 时网格单列撑满）
   if (typeof currentLayout !== 'undefined') {
     document.body.setAttribute('data-layout', currentLayout);
     const layoutBtn = $('layoutToggleBtn');
@@ -86,7 +72,6 @@ async function initApp() {
       });
     }
   } catch {}
-  // 管理员拉取控制面板设置，决定是否显示「删除漫画」
   if (user && user.role === 'admin') {
     try {
       const r = await api('/api/admin/settings');
@@ -99,22 +84,18 @@ async function initApp() {
   await loadAllData();
 }
 
-// ── 数据加载 ──
 async function loadAllData(force = false, targetTab) {
   showSkeleton('comicGrid', 6);
   showSkeleton('novelGrid', 6);
   showSkeleton('allGrid', 8);
 
   try {
-    // 只拉一次全量库：服务端不带 type 时返回的 series 已含全部书籍，
-    // 本地按 type 拆分即可得到 comic / novel 两个视图（与分开请求结果等价）。
-    // 原实现并发拉 3 次（comic + novel + all），而 all 是前两者的超集 —— 白传约 50% 数据。
+    // Fetch the library once and split by type locally; three requests transfer it twice.
     const resAll = await ComicAPI.getLibrary(null, force);
     const seriesAll = resAll.series || [];
     allSeries.all = seriesAll;
     allSeries.comic = splitSeriesByType(seriesAll, 'comic');
     allSeries.novel = splitSeriesByType(seriesAll, 'novel');
-    // 顺带缓存「最近添加」，供 renderPage('all') 复用，避免切到全库页时再发一次大请求
     recentData = { items: resAll.recent || [], label: resAll.recentLabel || '' };
     renderPage(targetTab || 'comic');
   } catch (err) {
@@ -122,8 +103,6 @@ async function loadAllData(force = false, targetTab) {
   }
 }
 
-// 从混合 series 中拆出指定类型：保持原系列顺序与名称，空系列丢弃。
-// 同名系列在服务端已按名称归并，故拆分结果与「按 type 单独请求」一致。
 function splitSeriesByType(seriesList, type) {
   const out = [];
   for (const s of seriesList) {
@@ -133,14 +112,10 @@ function splitSeriesByType(seriesList, type) {
   return out;
 }
 
-// ── 页面切换 ──
-// 重量级标签页（整库网格）重复点击 / 快速切换极易在 iOS 上 OOM 崩溃（"网页将重新载入"）。
-// 对策：① 同一标签不重建整页；② 渲染串行化，快速点击只保留最后一次目标，绝不叠加重建。
+// Several full-library grids alive at once gets the page killed on iOS.
 const _HEAVY_TABS = new Set(['comic', 'novel', 'all']);
 let _lastRenderedHeavy = null;
 
-// 切换重量级标签时，立即清空其它重量级网格、释放 DOM 与 blob 内存，
-// 避免多个整库网格同时在 DOM 中叠加导致 iOS WebContent 被杀（"网页将重新载入"）。
 function _clearGrid(id) {
   const g = document.getElementById(id);
   if (!g) return;
@@ -162,7 +137,6 @@ function _updateNav(tab) {
 async function switchTab(tab) {
   currentTab = tab;
   _updateNav(tab);
-  // 同一重量级标签重复点击：跳过整页重建（阅读进度刷新仍走 _libraryNeedsRefresh）
   if (_HEAVY_TABS.has(tab) && _lastRenderedHeavy === tab && !window._libraryNeedsRefresh) return;
   await renderPage(tab);
   _lastRenderedHeavy = tab;
@@ -170,11 +144,7 @@ async function switchTab(tab) {
 
 function switchPage(tab) {
   switchTab(tab);
-  // 进入详情页必须回到顶部。详情页是独立内容，若沿用书架当前的滚动位置，
-  // 用户从列表中段点进来会直接停在页面中段（看到「本系列 / 评论区」），
-  // 得先往上滑才能看到「开始阅读」。
-  // 同时这也修掉 FLIP 动画错位：终点矩形由 destCover.getBoundingClientRect()
-  // 按视口坐标算出，滚动不归零会把终点算到屏幕外。
+  // A detail page must start at the top, otherwise the cover animation lands off screen.
   if (tab === 'detail') window.scrollTo(0, 0);
   try {
     if (tab === 'detail' && currentDetailComic) {
@@ -185,22 +155,18 @@ function switchPage(tab) {
       if (location.hash !== '#' + tab) history.pushState(null, '', '#' + tab);
     }
   } catch (e) {}
-} // 兼容旧调用 + hash 路由
+}
 
 async function renderPage(tab) {
-  // 阅读器关闭后需要刷新书架进度（"继续阅读"排序依赖最新数据）
   if (window._libraryNeedsRefresh) {
     window._libraryNeedsRefresh = false;
     await loadAllData(false, tab);
     return;
   }
-  // 隐藏所有页面
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  // 显示对应页面（如果有）
   const pageEl = document.getElementById('page-' + tab);
   if (pageEl) pageEl.classList.add('active');
 
-  // 切换重量级标签时，立即清空其它重量级网格，释放 DOM/内存，避免多个整库网格叠加触发 iOS OOM
   if (_HEAVY_TABS.has(tab)) {
     const gridFor = { comic: 'comicGrid', novel: 'novelGrid', all: 'allGrid' }[tab];
     ['comicGrid', 'novelGrid', 'allGrid'].forEach(id => { if (id !== gridFor) _clearGrid(id); });
@@ -211,7 +177,6 @@ async function renderPage(tab) {
   else if (tab === 'all') {
     buildFilterBar(allSeries.all.flatMap(s => s.items));
     renderAllGrid();
-    // 最近添加：复用 loadAllData 已取回的数据，避免这里再发一次 1MB 级请求
     if (recentData) {
       if (recentData.items.length > 0) {
         showRecentSection(recentData.items, recentData.label);
@@ -229,8 +194,7 @@ async function renderPage(tab) {
   else if (tab === 'online') { checkOnlineStatus(); }
 }
 
-// ── 在线模块是否启用（由后端 ONLINE_SOURCE 决定，默认关闭；开启后无需改动前端）──
-let onlineEnabled = true; // 乐观默认，避免未拉取状态时误报「未启用」
+let onlineEnabled = true;
 
 async function checkOnlineStatus() {
   try {
@@ -246,16 +210,14 @@ async function checkOnlineStatus() {
       </p>`;
     }
     populateOnlineSources();
-  } catch { /* 拉取失败时不改变既有状态 */ }
+  } catch {  }
 }
 
-// ── 网格渲染 ──
 function renderGrid(gridId, continueId, series) {
   const flat = series.flatMap(s => s.items);
   const grid = $(gridId);
   if (!grid) return;
 
-  // 继续阅读 —— 按 lastUpdated 降序取最近阅读的一本
   const contEl = $(continueId);
   if (contEl) {
     const withProgress = flat
@@ -280,13 +242,12 @@ function renderGrid(gridId, continueId, series) {
     html += `<div class="series-header"><h2>${escHtml(s.name)}</h2><span class="count">${s.count} 本</span></div>`;
     html += s.items.map((c, i) => renderComicCard(c, i * 0.03)).join('');
   }
-  // 释放上一轮网格中的 blob 封面，防止内存泄漏累积（iOS OOM 崩溃主因之一）
+  // Release the previous grid's blob covers; leaked blobs are a common iOS OOM cause.
   grid.querySelectorAll('img').forEach(im => { if (im.src && im.src.indexOf('blob:') === 0) { try { URL.revokeObjectURL(im.src); } catch (e) {} } });
   grid.innerHTML = html;
   setTimeout(loadPdfCovers, 500);
 }
 
-// ── 继续阅读大卡片 ──
 function renderContinueCard(comic) {
   const pct = comic.progress && comic.progress.totalPages > 0
     ? Math.round((comic.progress.page / comic.progress.totalPages) * 100) : 0;
@@ -310,10 +271,9 @@ function renderContinueCard(comic) {
     </div>`;
 }
 
-// ── 封面卡片 ──
 function renderComicCard(comic, delay = 0) {
   const authorStr = (comic.authors || []).slice(0, 2).join('、');
-  const coverUrl = ComicAPI.getCoverUrl(comic.id); // 始终尝试加载，token 已内置
+  const coverUrl = ComicAPI.getCoverUrl(comic.id);
   const progressPct = comic.progress && comic.progress.totalPages > 0
     ? Math.round((comic.progress.page / comic.progress.totalPages) * 100) : 0;
 
@@ -337,13 +297,11 @@ function renderComicCard(comic, delay = 0) {
   </div>`;
 }
 
-// ── 长按菜单 ──
 function showComicMenu(event, comicId) {
   event.preventDefault();
   const comic = allComics.flatMap(s => s.items).find(c => c.id === comicId);
   if (!comic) return;
 
-  // 简单书架选择
   const shelves = userShelves.filter(s => !s.items.includes(comicId));
   let shelfOpts = shelves.map(s => `<div onclick="addToShelf('${s.id}','${comicId}')">+ ${escHtml(s.name)}</div>`).join('');
 
@@ -367,7 +325,6 @@ function showComicMenu(event, comicId) {
   document.addEventListener('click', () => menu.remove(), { once: true });
 }
 
-// ── 一键删除漫画（管理员 + 控制面板开关）──
 async function deleteComic(id) {
   const comic = (allComics.length ? allComics : allSeriesArrays())
     .flatMap(s => (s.items || []))
@@ -379,7 +336,6 @@ async function deleteComic(id) {
     const d = await r.json().catch(() => ({}));
     if (r.ok) {
       toast('已删除：' + name);
-      // 关闭可能打开的详情/菜单，并刷新书架
       const openMenu = document.querySelector('.context-menu');
       if (openMenu) openMenu.remove();
       await loadAllData(true);
@@ -391,7 +347,6 @@ async function deleteComic(id) {
   }
 }
 
-// ── 筛选 ──
 function toggleFilterPanel() {
   const panel = document.getElementById('filterPanel');
   if (!panel) return;
@@ -954,7 +909,6 @@ function toggleTagSection(ctx) {
   const section = document.getElementById(bodyId)?.closest('.tag-section');
   if (section) section.classList.toggle('collapsed', collapsed);
 }
-// 系列区块标题折叠（漫画/小说/全库通用）
 function toggleSeriesSection(headerEl) {
   const section = headerEl.closest('.series-section');
   if (!section) return;
@@ -962,7 +916,6 @@ function toggleSeriesSection(headerEl) {
   if (collapsedSeries.has(sid)) {
     collapsedSeries.delete(sid);
     section.classList.remove('collapsed');
-    // 窗口化下，折叠系列可能尚未渲染卡片（被跳过），展开时按需填充
     const grid = section.closest('.series-container');
     const sg = section.querySelector('.series-grid');
     if (grid && sg && sg.children.length === 0 && grid._gstate && grid._gstate.bySid[sid]) {
@@ -975,13 +928,11 @@ function toggleSeriesSection(headerEl) {
     section.classList.add('collapsed');
   }
 }
-// 推荐条横向滚动（桌面端箭头）
 function scrollRow(btn, dir) {
   const row = btn.parentElement.querySelector('.rec-scroll');
   if (!row) return;
   row.scrollBy({ left: dir * Math.max(240, Math.round(row.clientWidth * 0.8)), behavior: 'smooth' });
 }
-// 标签轨道横向滚动（桌面端箭头）—— 真正可滚动的是内层 .filter-chips-track
 function scrollTrack(bodyId, dir) {
   const track = document.getElementById(bodyId)?.querySelector('.filter-chips-track');
   if (!track) return;
@@ -993,19 +944,16 @@ function toggleTagFilter(tag) {
   renderComicGridByTag();
 }
 
-// 漫画页排序切换：series = 按系列分组；time = 按 mtime 降序（最近添加/修改最前）
 function setComicSort(mode) {
   comicSortMode = mode;
   try { localStorage.setItem('comic_sort', mode); } catch (e) {}
   renderComicGridByTag();
 }
-// 小说页排序切换
 function setNovelSort(mode) {
   novelSortMode = mode;
   try { localStorage.setItem('novel_sort', mode); } catch (e) {}
   renderNovelGridByTag();
 }
-// 全库页排序切换
 function setAllSort(mode) {
   allSortMode = mode;
   try { localStorage.setItem('all_sort', mode); } catch (e) {}
@@ -1017,7 +965,6 @@ function clearTagFilter() {
   renderComicGridByTag();
 }
 function renderComicGridByTag() {
-  // 同步排序切换条的选中态
   document.querySelectorAll('#page-comic .sort-chip').forEach(b => b.classList.toggle('active', b.dataset.sort === comicSortMode));
   let comics;
   if (!selectedTag) {
@@ -1029,7 +976,6 @@ function renderComicGridByTag() {
     renderGrid('comicGrid', 'continueComic', [{ name: '', count: 0, items: [] }]);
     return;
   }
-  // 按标签分组：每个标签一个区块，块内平铺该标签的本子
   const tagGroups = {};
   for (const c of comics) {
     const seen = new Set();
@@ -1040,11 +986,10 @@ function renderComicGridByTag() {
       tagGroups[t].push(c);
     }
   }
-  const MAX_PER_TAG = 60; // 每块最多显示最新60本，避免超长列表卡顿
-  const MIN_COUNT = 2;    // 过滤只有1本的冷门标签
+  const MAX_PER_TAG = 60;
+  const MIN_COUNT = 2;
   let series;
   if (selectedTag) {
-    // 单标签全量视图：不截断，窗口化滚动加载全部
     series = [{
       name: selectedTag,
       tag: selectedTag,
@@ -1066,12 +1011,7 @@ function renderComicGridByTag() {
           .sort((a, b) => (new Date(b.mtime || 0) - new Date(a.mtime || 0)))
           .slice(0, MAX_PER_TAG)
       }));
-    /* 【2026-09-23 修复】把「没有任何标签」的书归入「未分类」组。
-       原逻辑只对有标签的书分组，无标签的书（tags: []）进不了任何组，
-       而 fallback（series.length===0 才显示全部）在本库永远不触发
-       （库里有上千本带「中文」等标签的书），
-       导致无标签的书在「漫画」tab 完全不可见 —— 只能去「全库」找。
-       实测本库有 170+ 本属于这种情况。 */
+    // Books with no tags fall into no group at all, so collect them as "uncategorised".
     const taggedIds = new Set();
     for (const arr of Object.values(tagGroups)) for (const c of arr) taggedIds.add(c.id);
     const untagged = comics.filter(c => !taggedIds.has(c.id));
@@ -1094,7 +1034,6 @@ function renderComicGridByTag() {
   renderGrid('comicGrid', 'continueComic', series);
 }
 
-// ── 个性化推荐：猜你喜欢 / 今日推荐（纯前端） ──
 function hashStr(s) {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0;
@@ -1166,7 +1105,6 @@ async function renderRecommend() {
   attachHorizontalScrollPhysics();
 }
 
-// ── 评论区 ──
 async function loadComments(comicId) {
   const el = document.getElementById('detailComments');
   if (!el) return;
@@ -1211,7 +1149,6 @@ async function submitComment(comicId) {
   }
 }
 
-// ── AstrBot 联动（后端代理真实触发，凭据存服务端） ──
 function getAstrbotUrl() { return astrbotAddress; }
 async function openJmDownload() {
   const modal = document.getElementById('jmModal');
@@ -1231,7 +1168,6 @@ async function openJmDownload() {
   const inp = document.getElementById('jmInput');
   if (inp) inp.value = '';
   renderJmSeg();
-  // 保留上次选择的模式；首次或无效模式时默认 id
   if (!JM_MODES[jmMode]) jmMode = 'id';
   setJmMode(jmMode);
   modal.style.display = 'flex';
@@ -1242,14 +1178,12 @@ function closeJmModal() {
   const modal = document.getElementById('jmModal');
   if (modal) modal.style.display = 'none';
 }
-// ── JM 下载指令模式表（含新增 /jmupdate 增量、/jmi 详情） ──
 const JM_MODES = {
   id:   { cmd: 'jm',       label: '按 ID（/jm）',         hint: '本子 ID，如 123456',             ingest: true  },
   kw:   { cmd: 'jms',      label: '按关键词（/jms）',      hint: '关键词，支持 tag:全彩 / author:xxx / 第2页', ingest: true },
   upd:  { cmd: 'jmupdate', label: '增量更新（/jmupdate）', hint: '本子 ID，只下新增章节',           ingest: true  },
   info: { cmd: 'jmi',      label: '详情（/jmi）',          hint: '本子 ID，查看详情（不入库）',      ingest: false },
 };
-// 会话轮询状态
 let jmPollTimer = null, jmPollSid = null, jmLastSnap = '', jmStableCount = 0, jmPollCount = 0;
 function renderJmSeg() {
   const seg = document.getElementById('jmSeg');
@@ -1267,7 +1201,6 @@ function renderJmSeg() {
 }
 function buildJmCommand(mode, kw) {
   const q = (kw || '').trim();
-  // 用户直接输入完整指令（如 /jmi 1453619）时直接透传，不再套一层 /jm
   if (q.startsWith('/')) return q;
   const m = JM_MODES[mode] || JM_MODES.id;
   return '/' + m.cmd + ' ' + q;
@@ -1314,7 +1247,6 @@ async function copyJmCommand() {
   }
 }
 function isJmIngestCommand(command) {
-  // 根据实际指令判断是否会落盘入库；查询类（jmi/jmrank/jmrec 等）不入库
   const cmd = (command || '').trim().split(/\s+/)[0].toLowerCase();
   return ['/jm', '/jms', '/jmc', '/jmfavdl', '/jmupdate'].includes(cmd);
 }
@@ -1337,7 +1269,6 @@ async function sendJmCommand() {
       return;
     }
     if (!res.sessionId) {
-      // 兜底：老接口未返回 sessionId，仅展示首条回复
       if (r) { r.className = 'jm-result ok'; r.innerHTML = '✅ 已发送：<b>' + escHtml(res.command) + '</b>' + (res.reply ? '<br>Bot：' + escHtml(res.reply).replace(/\n/g, '<br>') : ''); }
       return;
     }
@@ -1367,15 +1298,14 @@ async function pollJmSession(ingest) {
     data = res.messages || [];
   } catch { return; }
   renderJmSession(data, ingest);
-  // 结束条件：done 关键词 / 快照稳定（查询类）/ 超时上限
   const allText = data.filter(m => m.role === 'bot' && m.type === 'text').map(m => m.text || '').join('\n');
   const done = /(完成|入库|已下载|下载成功|成功收编|已入库|已加入)/.test(allText);
   const snap = JSON.stringify(data);
   if (snap === jmLastSnap) jmStableCount++; else jmStableCount = 0;
   jmLastSnap = snap;
   jmPollCount++;
-  const stableStop = !ingest && jmStableCount >= 3;   // 查询类：内容稳定即停
-  const timeoutStop = jmPollCount >= 80;              // 硬上限 ~120s
+  const stableStop = !ingest && jmStableCount >= 3;
+  const timeoutStop = jmPollCount >= 80;
   if (done || stableStop || timeoutStop) stopJmPoll();
 }
 function renderJmSession(messages, ingest) {
@@ -1425,7 +1355,6 @@ function openLocalSearch() {
   }, 120);
 }
 
-// ── 轻量 toast ──
 let toastTimer = null;
 function toast(msg) {
   const el = document.getElementById('fnToast');
@@ -1436,7 +1365,6 @@ function toast(msg) {
   toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
 }
 
-// ── 骨架屏 ──
 function showSkeleton(gridId, count) {
   const el = document.getElementById(gridId);
   if (!el) return;
@@ -1449,9 +1377,6 @@ function renderSkeletonHtml(count = 6) {
   ).join('') + '</div>';
 }
 
-// ── 个人中心 ──
-
-// 防止漫画盘(sda)偶发 I/O 卡顿时前端永远卡在"加载中…"：加超时 + 可重试
 const PROFILE_TIMEOUT_MS = 15000;
 
 function renderProfileTimeout(el) {
@@ -1464,7 +1389,6 @@ async function renderProfile() {
   const el = $('profileContent');
   if (!el) return;
 
-  // 先显式进入加载态，保证超时兜底一定能替换占位
   el.innerHTML = '<div class="profile-loading">加载中...</div>';
 
   const timer = setTimeout(() => renderProfileTimeout(el), PROFILE_TIMEOUT_MS);
@@ -1476,7 +1400,6 @@ async function renderProfile() {
     ]);
     clearTimeout(timer);
     renderProfileContent(el, bookmarks, recent, downloads);
-    // === 任务 B 补全：加载并渲染自定义书架 ===
     userShelves = await ComicAPI.getShelves();
     if (typeof renderShelvesPanel === 'function') renderShelvesPanel();
   } catch (e) {
@@ -1491,7 +1414,6 @@ async function renderProfile() {
 function renderProfileContent(container, bookmarks, recent, downloads) {
   let html = '';
 
-  // 收藏
   html += '<h2 class="section-title">收藏 <span class="count">' + bookmarks.length + ' 本</span></h2>';
   if (bookmarks.length > 0) {
     html += '<div class="library-grid profile-grid">';
@@ -1501,7 +1423,6 @@ function renderProfileContent(container, bookmarks, recent, downloads) {
     html += '<div class="empty-state"><p>还没有收藏</p><p class="hint">阅读时长按漫画或点 ★ 即可收藏</p></div>';
   }
 
-  // 最近观看（排除已完结的）
   const watching = recent.filter(c => c.progress && c.progress.page > 0);
   html += '<h2 class="section-title" style="margin-top:24px">最近观看 <span class="count">' + watching.length + ' 本</span></h2>';
   if (watching.length > 0) {
@@ -1531,7 +1452,6 @@ function renderProfileContent(container, bookmarks, recent, downloads) {
     html += '<div class="empty-state"><p>还没有观看记录</p><p class="hint">开始阅读漫画后会自动记录</p></div>';
   }
 
-  // 最近下载（在线源 → 本地库，持久化保存）
   const dlItems = (downloads && downloads.items) || [];
   html += '<h2 class="section-title" style="margin-top:24px">最近下载 <span class="count">' + dlItems.length + ' 条</span></h2>';
   if (dlItems.length > 0) {
@@ -1554,21 +1474,18 @@ function renderProfileContent(container, bookmarks, recent, downloads) {
     html += '<div class="empty-state"><p>还没有下载记录</p><p class="hint">在「在线」页找到漫画后，点 ⬇️ 下载到库</p></div>';
   }
 
-  // 退出登录
   html += `<div style="margin-top:32px;text-align:center"><button class="action-btn" onclick="logout()">退出登录</button></div>`;
 
   container.innerHTML = html;
   setTimeout(loadPdfCovers, 500);
 }
 
-// ── 工具 ──
 function escHtml(str) {
   const div = document.createElement('div');
   div.textContent = str || '';
   return div.innerHTML;
 }
 
-/** 时间格式化（个人空间的下载记录） */
 function fmtTimeCn(iso) {
   if (!iso) return '';
   try {
@@ -1578,13 +1495,11 @@ function fmtTimeCn(iso) {
   } catch (e) { return iso; }
 }
 
-// ═══ 在线下载清单（整本漫画，可累积后由用户决定何时下载）═══
-// 移动端长按会触发 contextmenu，借它作为「长按」入口（比自写 touch 计时器可靠）。
 const DLQ_KEY = 'fn_comic_dlqueue';
 let dlQueue = [];
-let onlineSelMode = false;        // 多选模式下，点卡片 = 加入/移出清单
-let onlineCache = {};             // key -> {title, cover}（避免把书名拼进 onclick 属性）
-let _dlDoneResolve = null;        // 串行下载：当前任务完成回调
+let onlineSelMode = false;
+let onlineCache = {};
+let _dlDoneResolve = null;
 
 try { dlQueue = JSON.parse(localStorage.getItem(DLQ_KEY) || '[]'); } catch (e) { dlQueue = []; }
 if (!Array.isArray(dlQueue)) dlQueue = [];
@@ -1608,7 +1523,6 @@ function markQueued(el, on) {
   if (c) c.style.display = on ? 'flex' : 'none';
 }
 
-/** 长按卡片：进入多选并加入/移出清单 */
 function longPressQueue(id, source, el) {
   if (!onlineSelMode) { onlineSelMode = true; updateSelBar(); }
   toggleQueue(id, source, el);
@@ -1689,7 +1603,6 @@ function renderQueuePanel() {
   </div>`).join('');
 }
 
-/** 串行下载整个清单（后端并发上限 2，前端逐本等完成，避免 429 拒绝） */
 async function downloadQueue() {
   if (!dlQueue.length) { toast('清单是空的'); return; }
   const items = dlQueue.slice();
@@ -1705,7 +1618,6 @@ async function downloadQueue() {
       toast(`(${i + 1}/${items.length}) 正在下载：${it.title || it.id}`);
       await runDownloadAndWait(it.title || it.id, episodes, album || {});
     } catch (e) {
-      /* 单本失败不中断整批 */
     }
     removeFromQueue(it.key);
   }
@@ -1719,21 +1631,16 @@ function runDownloadAndWait(title, episodes, album) {
   });
 }
 
-/** 卡片点击统一入口：多选模式下切换清单，否则进详情 */
 function handleOnlineCardTap(id, source, el) {
   if (onlineSelMode) { toggleQueue(id, source, el); return; }
   onlineOpenAlbum(id, source);
 }
 
-// ── 封面加载 ──
-// 主路径：卡片模板里的 <img loading="lazy" src=封面URL> 已由浏览器原生懒加载
-// （视口外不请求、同源并发约 6），配合服务端"扫描后后台预生成封面"，首屏基本秒出。
-// 这里只处理 PDF 的兜底：服务端抠图失败（加密 PDF 等）时，再用前端 pdf.js 现渲。
 let _coverObserver = null;
 
 function loadPdfCovers() {
   if (!('IntersectionObserver' in window)) return;
-  if (_coverObserver) _coverObserver.disconnect(); // 重复渲染（翻页/筛选）时避免 observer 泄漏
+  if (_coverObserver) _coverObserver.disconnect();
   _coverObserver = new IntersectionObserver((entries) => {
     for (const e of entries) {
       if (!e.isIntersecting) continue;
@@ -1744,8 +1651,6 @@ function loadPdfCovers() {
       const id = card.getAttribute('onclick')?.match(/'(.*?)'/)?.[1];
       const comic = allSeriesArrays().flatMap(s => s.flatMap(x => x.items)).find(c => c.id === id);
       if (!comic || comic.ext !== 'pdf') continue;
-      // 服务端封面（pdfcover 抠首图）正常情况下已被原生 <img> 加载；
-      // 仅当该 <img> 加载失败（404/加密）时，才退化为 pdf.js 下载整本渲染。
       const img = el.querySelector('img');
       const fallback = () => renderPdfCover(el, comic);
       if (img) {
@@ -1763,12 +1668,9 @@ function loadPdfCovers() {
   });
 }
 
-// 前端兜底：服务端（lib/pdfcover.js）已能抠图出封面，正常 <img> 即可显示。
-// 旧逻辑会在封面加载失败时「整本下载 PDF → 解码 → 回传 NAS」，是移动端内存炸弹 + NAS 写 IO 过载
-// （白屏崩溃 / 重载巨慢）的主因之一。改为：仅对彻底失败的封面显示轻量占位，绝不下整本 PDF、绝不回传写盘。
 function renderPdfCover(coverEl, comic) {
   if (!coverEl) return;
-  if (coverEl.querySelector('img')) return; // 已有封面则不覆盖
+  if (coverEl.querySelector('img')) return;
   coverEl.innerHTML = '<div class="placeholder-cover" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:30px;color:#555">📖</div>';
 }
 
@@ -1778,10 +1680,6 @@ function logout() {
   window.location.href = '/';
 }
 
-/* ===== Gemini 双轨制引擎注入（2026-08-12 安全修复版：追加覆盖 renderGrid/renderComicGridByTag，新增 toggleLayout/parseMangaMeta/renderSingleMangaCard） ===== */
-// ==========================================
-// 注入：双轨制引擎控制器与元数据解析 (安全修复版)
-// ==========================================
 let currentLayout = 'spatial';
 const iconList = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>`;
 const iconGrid = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>`;
@@ -1791,8 +1689,7 @@ function toggleLayout() {
   document.body.setAttribute('data-layout', currentLayout);
   const btn = $('layoutToggleBtn');
   if (btn) btn.innerHTML = (currentLayout === 'spatial') ? iconList : iconGrid;
-  
-  // 兼容漫画 Tab 的标签云状态刷新
+
   if (currentTab === 'comic') {
     renderComicGridByTag(); 
   } else if (currentTab === 'novel') {
@@ -1804,7 +1701,6 @@ function toggleLayout() {
   }
 }
 
-// 修复 P0-1：修正无限循环
 function parseMangaMeta(rawTitle) {
   let title = rawTitle || '';
   const groupMatch = title.match(/^\[(.*?)\]/);
@@ -1819,10 +1715,6 @@ function parseMangaMeta(rawTitle) {
   return { group, author, title: title.trim() || rawTitle };
 }
 
-// ==========================================
-// 覆盖原有的 renderGrid 与 renderComicGridByTag
-// ==========================================
-
 function renderGrid(gridId, continueId, series) {
   const flat = series.flatMap(s => s.items);
   const grid = $(gridId);
@@ -1834,19 +1726,17 @@ function renderGrid(gridId, continueId, series) {
     const withProgress = flat.filter(c => c.progress && c.progress.page > 0)
       .sort((a, b) => new Date(b.progress.updatedAt || 0) - new Date(a.progress.updatedAt || 0))
       .slice(0, 1);
-      
+
     if (withProgress.length > 0) {
       const comic = withProgress[0];
       const meta = parseMangaMeta(comic.name);
       const authorStr = (comic.authors && comic.authors.length > 0) ? comic.authors.slice(0, 2).join('、') : meta.author;
       const coverUrl = ComicAPI.getCoverUrl(comic.id);
-      
-      // 修复 P0-2：使用 progress.totalPages
+
       const pct = (comic.progress && comic.progress.totalPages) 
         ? Math.round((comic.progress.page / comic.progress.totalPages) * 100) : 0;
-      
+
       const aura = $('ambientAura');
-      // 修复 P1-4：安全设置 backgroundImage
       if (aura) aura.style.backgroundImage = `url("${coverUrl.replace(/"/g, '&quot;')}")`;
 
       if (currentLayout === 'spatial') {

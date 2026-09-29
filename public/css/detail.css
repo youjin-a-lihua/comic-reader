@@ -1,10 +1,7 @@
-/* ═══ 漫画详情 / 系列枢纽页 ═══ */
-
 #page-detail .page-content {
   padding: 0 16px 96px;
 }
 
-/* 头部大图 + 元信息 */
 .detail-hero {
   display: flex;
   gap: 16px;
@@ -71,7 +68,6 @@
   border-radius: 999px;
 }
 
-/* 继续 / 开始阅读 主按钮 */
 .detail-start {
   margin-top: auto;
   display: flex;
@@ -96,7 +92,6 @@
   opacity: 0.85;
 }
 
-/* 同系列卷列表 */
 .detail-section-title {
   font-size: 14px;
   font-weight: 600;
@@ -177,7 +172,6 @@
 }
 .volume-badge.read { background: var(--text-tertiary); }
 
-/* ═══ 评论区 ═══ */
 .comment-box {
   display: flex;
   flex-direction: column;
@@ -251,7 +245,6 @@
   white-space: pre-wrap;
 }
 
-/* ═══ 标签云（漫画页顶部） ═══ */
 .tag-cloud {
   display: none;
   flex-wrap: wrap;
@@ -280,7 +273,6 @@
 }
 .tag-pill.active .count { color: rgba(255,255,255,0.8); }
 
-/* ═══ 搜索页操作按钮 ═══ */
 .search-actions {
   display: flex;
   gap: 10px;
@@ -304,7 +296,6 @@
 }
 .action-btn:active { transform: scale(0.98); }
 
-/* ═══ AstrBot 弹窗 ═══ */
 .modal-mask {
   position: fixed;
   inset: 0;
@@ -435,7 +426,6 @@
 .jm-result.ok { background: rgba(52,199,89,0.12); color: #4ade80; border: 1px solid rgba(52,199,89,0.3); }
 .jm-result.err { background: rgba(255,159,10,0.12); color: #ffb454; border: 1px solid rgba(255,159,10,0.3); }
 
-/* ═══ Toast ═══ */
 .fn-toast {
   position: fixed;
   left: 50%;
@@ -458,17 +448,10 @@
   transform: translateX(-50%) translateY(0);
 }
 
-
-/* ── 详情页返回按钮（悬浮左上角，高于顶部 header z-index:100） ── */
 .detail-back {
   position: fixed;
   top: 12px;
   left: 12px;
-  /* 【2026-09-22 修正】原为 9999 —— 本意只是「高于顶部 header(z-index:100)」，
-     但 9999 会盖住阅读器容器 .reader-container（z-index:1000），
-     导致打开阅读器后详情页的返回键仍悬浮在最上层，iPhone 上表现为「两个回退键」，
-     且点它无效（它属于详情页）。改回符合本意的层级：高于 header(100) 与详情页内容，
-     低于阅读器(2000)。 */
   z-index: 900;
   width: 44px;
   height: 44px;

@@ -1,5 +1,7 @@
 # testdata —— 部署后的可阅读性验收样本
 
+> English version: [README.en.md](README.en.md)
+
 本目录放**一本真实中文教材的 EPUB + PDF 双格式成品**，用途只有一个：
 **部署完 comic-reader 后，用它验证「能不能正常读」**，而不是拿空库或几张假图自欺欺人。
 

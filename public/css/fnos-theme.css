@@ -1,6 +1,3 @@
-/* ═══════════════════════════════════════════════════════
-   Fluid Dual-Engine Architecture (iOS 26 HIG)
-   ═══════════════════════════════════════════════════════ */
 :root {
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif;
   --spring: cubic-bezier(0.32, 0.72, 0, 1);
@@ -22,7 +19,6 @@ body {
 .page { display: none; animation: fadeUp 0.6s var(--spring); }
 .page.active { display: block; }
 
-/* 环境光与玻璃态导航 */
 .ambient-bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; transition: opacity 0.8s var(--spring); }
 .ambient-aura {
   width: 100vw; height: 100vh; background-size: cover; background-position: center;
@@ -44,7 +40,6 @@ body[data-layout="pragmatic"] .header-container { background: rgba(20, 20, 22, 0
 }
 .icon-btn:hover, .user-avatar:hover { transform: scale(1.08); background: rgba(255,255,255,0.2); }
 
-/* 水平筛选筹码 */
 .filter-scroll-container { width: 100%; overflow-x: auto; padding: 0 24px 16px; scrollbar-width: none; -ms-overflow-style: none; }
 .filter-scroll-container::-webkit-scrollbar { display: none; }
 .filter-chips-track { display: flex; gap: 10px; width: max-content; }
@@ -56,7 +51,6 @@ body[data-layout="pragmatic"] .header-container { background: rgba(20, 20, 22, 0
 .filter-chip.active { background: var(--text-main); color: #000; font-weight: 600; }
 .filter-clear { flex: 0 0 auto; padding: 6px 14px; border-radius: 999px; background: var(--accent, #0A84FF); color: #fff; border: none; font-size: 13px; cursor: pointer; margin-left: 8px; }
 
-/* 标签云 pill（漫画/小说页共用，需与 filter-chip 视觉一致） */
 .tag-pill {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
   background: rgba(255,255,255,0.08); color: var(--text-sub, rgba(255,255,255,0.6));
@@ -70,11 +64,9 @@ body[data-layout="pragmatic"] .header-container { background: rgba(20, 20, 22, 0
 [data-theme="light"] .tag-pill:hover { color: var(--text-main); background: rgba(0,0,0,0.08); }
 [data-theme="light"] .tag-pill.active { background: var(--text-main); color: var(--bg-ambient); }
 
-/* 布局切换引擎 */
 .page-content { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
 .section-title { font-size: 20px; font-weight: 700; margin-bottom: 16px; margin-top: 24px; }
 
-/* Hero 画廊模式 */
 .hero-spatial { position: relative; width: 100%; height: 420px; border-radius: 28px; overflow: hidden; cursor: pointer; margin-bottom: 32px; box-shadow: 0 24px 48px rgba(0,0,0,0.5); transition: transform var(--spring); }
 .hero-spatial:active { transform: scale(0.98); }
 .hero-spatial .hero-cover-art { width: 100%; height: 100%; object-fit: cover; object-position: center 25%; }
@@ -82,7 +74,6 @@ body[data-layout="pragmatic"] .header-container { background: rgba(20, 20, 22, 0
 .hero-spatial .hero-title { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
 .hero-spatial .hero-sub { font-size: 13px; color: var(--text-sub); }
 
-/* Hero 实用模式 */
 .hero-pragmatic { display: flex; gap: 16px; background: #1C1C1E; border-radius: 16px; padding: 12px; margin-bottom: 24px; cursor: pointer; transition: transform var(--spring); }
 .hero-pragmatic:active { transform: scale(0.97); }
 .hero-pragmatic .hero-cover-art { width: 80px; height: 110px; border-radius: 10px; object-fit: cover; }
@@ -92,13 +83,11 @@ body[data-layout="pragmatic"] .header-container { background: rgba(20, 20, 22, 0
 .progress-bar { height: 4px; background: rgba(255,255,255,0.1); border-radius: 999px; }
 .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; }
 
-/* 排序切换条 */
 .sort-bar { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; }
 .sort-label { font-size: 13px; color: var(--text-sub, rgba(255,255,255,0.6)); }
 .sort-chip { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--glass-border, rgba(255,255,255,0.1)); background: var(--glass-panel, rgba(20,20,22,0.75)); color: var(--text-main, #fff); font-size: 13px; cursor: pointer; transition: all 0.2s; }
 .sort-chip.active { background: var(--accent, #0A84FF); border-color: transparent; color: #fff; }
 
-/* 搜索页 */
 .search-bar { position: relative; display: flex; align-items: center; margin: 0 0 20px; }
 .search-input { flex: 1; height: 48px; padding: 0 48px 0 18px; border-radius: 14px; border: 1px solid var(--glass-border, rgba(255,255,255,0.1)); background: var(--glass-panel, rgba(20,20,22,0.75)); color: var(--text-main, #fff); font-size: 15px; outline: none; }
 .search-input::placeholder { color: var(--text-sub, rgba(255,255,255,0.6)); }
@@ -112,7 +101,6 @@ body[data-layout="pragmatic"] .header-container { background: rgba(20, 20, 22, 0
 [data-theme="light"] .search-input { background: #ffffff; color: var(--text-main); }
 [data-theme="light"] .recent-search-item { background: #ffffff; }
 
-/* 动态流式网格 */
 .manga-grid { display: grid; transition: all 0.4s var(--spring); grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 24px; }
 body[data-layout="pragmatic"] .manga-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 20px 16px; }
 
@@ -133,14 +121,12 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
 .title { line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .author { font-size: 11px; color: var(--text-sub); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* 灵动底部栏 */
 .bottom-nav { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 8px; padding: 12px 24px; background: var(--glass-panel); backdrop-filter: blur(40px) saturate(180%); border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; }
 .nav-item { background: none; border: none; color: var(--text-sub); font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 999px; transition: all 0.2s; cursor: pointer; }
 .nav-item.active { background: rgba(255,255,255,0.1); color: #fff; }
 
 @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 
-/* 响应式收束 */
 @media (max-width: 768px) {
   .header-container h1 { font-size: 24px; }
   .page-content { padding: 0 16px; }
@@ -151,7 +137,6 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
   .bottom-nav { width: 90%; justify-content: space-between; bottom: 20px; padding: 10px 16px; }
 }
 
-/* ── 兼容旧版 markup（我的页面 / 收藏 / 历史 / 今日添加） ── */
 .library-grid,
 .recent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(160px, calc(50vw - 24px)), 1fr)); gap: 16px; }
 
@@ -181,11 +166,6 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
   .library-grid, .recent-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
 }
 
-/* ═══════════════════════════════════════════════════════
-   补全块：排行榜 (Task A) & 我的书架与个人中心 (Task B)
-   ═══════════════════════════════════════════════════════ */
-
-/* --- 排行榜 (Ranking) --- */
 .ranking-list { display: flex; flex-direction: column; gap: 12px; }
 .rank-item { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 14px; background: rgba(22, 22, 26, 0.85); cursor: pointer; transition: background .2s, transform .2s; border: 1px solid var(--glass-border, rgba(255,255,255,0.05)); }
 .rank-item:hover { background: rgba(255,255,255,.08); transform: translateY(-2px); }
@@ -202,7 +182,6 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
 .rank-tab { background: none; border: none; color: var(--text-sub, #86868B); font-size: 15px; font-weight: 600; cursor: pointer; padding: 4px 0; transition: color .2s; }
 .rank-tab.active { color: var(--accent, #0A84FF); border-bottom: 2px solid var(--accent, #0A84FF); }
 
-/* --- 我的书架 (Shelves) --- */
 .shelves-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 14px; margin-bottom: 20px; }
 .shelf-item { background: rgba(22, 22, 26, 0.85); border-radius: 14px; padding: 12px; cursor: pointer; transition: transform .2s, background .2s, border-color .2s; border: 1px solid var(--glass-border, rgba(255,255,255,0.05)); }
 .shelf-item:hover { transform: translateY(-2px); background: rgba(255,255,255,.08); }
@@ -214,7 +193,6 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
 .shelf-count { font-size: 12px; color: var(--text-sub, #86868B); margin-top: 2px; }
 .shelves-content .manga-grid { margin-top: 16px; }
 
-/* --- 个人中心补充列表兜底 (Profile Items) --- */
 .profile-list { display: flex; flex-direction: column; gap: 12px; }
 .profile-item { display: flex; gap: 14px; align-items: center; padding: 10px 12px; border-radius: 14px; background: rgba(22, 22, 26, 0.85); cursor: pointer; transition: background .2s, transform .2s; border: 1px solid var(--glass-border, rgba(255,255,255,0.05)); }
 .profile-item:hover { background: rgba(255,255,255,.08); transform: translateY(-2px); }
@@ -228,7 +206,6 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
 .profile-progress-bar { height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 8px; overflow: hidden; }
 .profile-progress-bar .fill { height: 100%; background: var(--accent, #0A84FF); border-radius: 2px; transition: width 0.3s var(--spring); }
 
-/* ═══ 浅色模式（Apple 风格） ═══ */
 [data-theme="light"] {
   --bg-ambient: #f5f5f7;
   --glass-panel: rgba(255, 255, 255, 0.82);
@@ -275,7 +252,6 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
 [data-theme="light"] .rank-tab { color: var(--text-sub); }
 [data-theme="light"] .rank-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
-/* ═══ 标签折叠区块头（漫画页 / 全库页共用） ═══ */
 .tag-section { padding-bottom: 0; }
 .tag-section-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -291,7 +267,6 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
 [data-theme="light"] .tag-section-title .count,
 [data-theme="light"] .tag-section-chevron { color: var(--text-sub); }
 
-/* ═══ 首页推荐条：猜你喜欢 / 今日推荐 ═══ */
 .recommend-strip { margin: 8px 0 4px; }
 .rec-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px; }
 .rec-today { font-size: 12px; color: var(--text-sub, #999); }
@@ -305,7 +280,6 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
 [data-theme="light"] .tag-toggle:hover { color: var(--text-main); border-color: var(--text-main); }
 [data-theme="light"] .rec-badge { box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
 
-/* ═══ 系列区块折叠（漫画 / 小说 / 全库 每个系列标题可收起） ═══ */
 .manga-grid.series-container { display: block; }
 .series-section { margin-bottom: 4px; }
 .series-section-header {
@@ -327,13 +301,11 @@ body[data-layout="pragmatic"] .manga-meta-wrapper .title { font-size: 13px; font
 .series-section.collapsed .series-body { display: none; }
 .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 24px; padding: 8px 0 24px; }
 body[data-layout="pragmatic"] .series-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 20px 16px; }
-/* 移动端：避免单列占满屏，复用 .manga-grid 的小尺寸覆盖 */
 @media (max-width: 768px) {
   .series-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; }
   body[data-layout="pragmatic"] .series-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 20px 12px; }
 }
 
-/* ═══ 横向滚动箭头（桌面端显示 / 移动端隐藏，移动端靠触摸滑动） ═══ */
 .filter-scroll-container { overflow-x: visible; }
 .filter-chips-track { scrollbar-width: none; -ms-overflow-style: none; }
 .filter-chips-track::-webkit-scrollbar { display: none; }
@@ -352,13 +324,11 @@ body[data-layout="pragmatic"] .series-grid { grid-template-columns: repeat(auto-
 .scroll-btn:active { transform: scale(0.94); }
 @media (max-width: 768px) { .scroll-btn { display: none; } }
 
-/* 浅色模式补充 */
 [data-theme="light"] .series-title { color: var(--text-main); }
 [data-theme="light"] .series-title .count { background: rgba(0,0,0,0.06); color: var(--text-sub); }
 [data-theme="light"] .series-chevron { color: var(--text-sub); }
 [data-theme="light"] .scroll-btn { border-color: rgba(0,0,0,0.12); background: rgba(0,0,0,0.05); color: var(--text-main); }
 
-/* 在线源切换器（来自 comic-reader 多源改造） */
 .source-select {
   background: var(--surface, #1f2430); color: var(--text, #eee);
   border: 1px solid rgba(127,127,127,.3); border-radius: 10px;
@@ -371,11 +341,6 @@ body[data-layout="pragmatic"] .series-grid { grid-template-columns: repeat(auto-
 }
 [data-theme="light"] .scroll-btn:hover { background: rgba(0,0,0,0.1); }
 
-/* ═══════════════════════════════════════════════════════
-   Shopify 质感增强：FLIP 展开代理与横向流物理动量
-   ═══════════════════════════════════════════════════════ */
-
-/* FLIP 共享元素飞行动画代理 */
 .flip-ghost-proxy {
   position: fixed;
   z-index: 9999;
@@ -393,7 +358,6 @@ body[data-layout="pragmatic"] .series-grid { grid-template-columns: repeat(auto-
   transform-origin: top left;
 }
 
-/* 横向推荐流速度物理倾角 */
 .rec-scroll {
   --scroll-tilt: 0deg;
   --scroll-skew: 0deg;
@@ -422,7 +386,6 @@ body[data-layout="pragmatic"] .series-grid { grid-template-columns: repeat(auto-
     translateY(-4px);
 }
 
-/* === 增量补丁：微光描边与美术增强 === */
 .manga-cover-wrap { position: relative; overflow: hidden; }
 .manga-cover-wrap::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit;
@@ -446,38 +409,11 @@ body[data-layout="pragmatic"] .series-grid { grid-template-columns: repeat(auto-
   border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 2px 8px rgba(10,132,255,0.35) !important;
 }
 
-/* ══════════════════════════════════════════════════════════════════════
-   【2026-09-22 性能修复】长列表的入场动画与阴影会打满移动端 GPU
-   ──────────────────────────────────────────────────────────────────────
-   实测（iPhone 视口）：书架/全库页同时存在 74 个 .manga-card，
-   每个都带 `animation: fadeUp 0.6s ... both`（见本文件 129 行），
-   且 JS 按索引错峰加 animation-delay（i*0.03，第 74 个要等 2.2s 才开始）。
-   transform+opacity 动画会把每个卡片提升为独立合成层 —— 74 层同时动画，
-   iOS Safari 直接掉帧，表现为「点返回后卡一下才切过去」。
-
-   更严重的是：本文件 119 行给 .manga-card 加的 content-visibility:auto
-   （本意是跳过屏外元素的渲染）**被动画架空** —— 动画中的元素不会被跳过。
-
-   处理：
-   1. 入场动画只保留首屏可能看到的前 12 个，其余一律不做动画；
-   2. 移动端把卡片阴影的模糊半径压小（74 个阴影是主要绘制开销）；
-   3. 底部导航的 40px 背景模糊在移动端降到 16px。
-   ══════════════════════════════════════════════════════════════════════ */
-
-/* 1) 入场动画只留给「首屏最上方的推荐条」前 6 张。
-   踩坑记录：最初想用 `.manga-card:nth-child(n+13)` 限流，但 nth-child 是
-   **在各自主元素内计数** —— 本页结构是 .series-container(60张) +
-   .recommend-strip(12张) + .library-grid(2张)，各自的前 12 名都能命中，
-   结果仍有 26 张在动。改为按容器精确限定。
-   （manga-card 的父链实测：div.series-grid < div.series-body <
-     div.manga-grid.series-container；div.rec-cell < div.rec-scroll <
-     div.rec-scroll-row < section.recommend-strip） */
-.manga-card { animation: none !important; }                       /* 默认不做 */
-.recommend-strip .rec-cell:nth-child(-n+6) .manga-card {          /* 只留首屏可见的 6 张 */
+.manga-card { animation: none !important; }
+.recommend-strip .rec-cell:nth-child(-n+6) .manga-card {
   animation: fadeUp 0.6s var(--spring) both !important;
 }
 
-/* 2) 移动端收敛阴影与背景模糊开销 */
 @media (max-width: 768px) {
   body[data-layout="spatial"] .manga-card { box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
   body[data-layout="pragmatic"] .manga-cover-wrap { box-shadow: 0 2px 8px rgba(0,0,0,0.25); }

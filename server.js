@@ -1,23 +1,4 @@
-/**
- * fnOS 漫画阅读器 — Express 服务器
- *
- * ── 本次修复清单 ────────────────────────────────────────────────
- *  P0-1 /api/bookmarks 里 hasCover(item.id, item.path) —— progress 项没有 path
- *       字段，永远传 undefined，导致收藏页封面全丢。改用 comicMap[item.id].path。
- *  P0-2 JWT_SECRET 每次启动随机生成 → 应用一重启（或 fnOS 更新）全家 token 失效，
- *       所有人被踢下线。改为持久化到 DATA_DIR/.jwt-secret。
- *  P0-3 几乎每个路由都写 scanAllLibs(true) 强制重扫，60s 缓存形同虚设。
- *       385 本书 × 每请求全盘 stat NAS = 首页卡 3~8 秒。改为默认吃缓存，
- *       只有 ?refresh=1 和库增删时才失效。
- *  P0-4 views/likes/shelves/libraries 全部 readFileSync+writeFileSync 裸写，
- *       并发下互相覆盖、断电写半截。统一走 lib/jsonstore（原子写+写合并）。
- *  P1-1 PDF 封面之前只能靠前端 pdf.js 现渲染，列表页一片灰。现在服务端
- *       lib/pdfcover 直接抠首张 JPEG；另开 POST /cover 让前端回传缓存。
- *  P1-2 Range 头没校验，curl -H "Range: bytes=abc-" 直接 500 / 进程异常。
- *  P1-3 /api/login 无限重试，可暴力破解 NAS 账号。加 IP+账号维度限速。
- *  P1-4 缺全局错误处理，任何未捕获异常返回 HTML 错误页，前端 JSON.parse 崩。
- *  P1-5 进程退出不落盘，最后几百毫秒的进度丢失。装 exit hook。
- */
+// Express server: auth, library scan/cache, PDF/EPUB/CBZ/cover serving, bookmarks, annotations, admin API.
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -51,8 +32,7 @@ const onlineSources = require('./lib/sources');
 
 const app = express();
 
-// 全局异步包装：Express ^4.21 不会捕获 async handler 的 rejection，
-// 异常会变成 unhandledRejection 且客户端永久挂起。此包装对所有 verb（含未来新增路由）自动生效。
+// Express 4 does not catch rejections from async handlers; without this wrapper the client hangs forever.
 for (const verb of ['get', 'post', 'put', 'delete', 'patch', 'options', 'head', 'use']) {
   const original = app[verb].bind(app);
   app[verb] = (...args) => original(...args.map(h => (
@@ -69,18 +49,15 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 
 installExitHooks();
 
-// 载入历史操作日志到内存环形（管理员页首次查询即可命中，无需读盘）
 audit.init().catch(e => console.error('[audit] init 失败:', e.message));
 
-// ── JWT 密钥持久化 ──────────────────────────────────
-// 原来是 crypto.randomBytes(32) 直接放内存，重启即失效。
 function loadJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
   const f = path.join(DATA_DIR, '.jwt-secret');
   try {
     const s = fs.readFileSync(f, 'utf-8').trim();
     if (s.length >= 32) return s;
-  } catch { /* 首次启动 */ }
+  } catch {  }
   const s = crypto.randomBytes(32).toString('hex');
   try {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -92,22 +69,15 @@ function loadJwtSecret() {
 }
 const JWT_SECRET = loadJwtSecret();
 
-// ── 中间件 ──────────────────────────────────────────
-
 app.use(express.json({ limit: '1mb' }));
-// GZIP 压缩：静态资源与 JSON 响应体积减少 70%+（弱网下显著）
 app.use(require('compression')());
-// 封面回传是二进制
 app.use('/api/comic/:id/cover', express.raw({ type: ['image/jpeg', 'image/png'], limit: '4mb' }));
 
 app.disable('x-powered-by');
 
-// 静态文件（不带缓存，开发阶段每次拉最新）
 app.use('/js', express.static(path.join(PUBLIC_DIR, 'js'), { index: false, setHeaders: res => { res.set('Cache-Control', 'no-cache'); } }));
 app.use('/css', express.static(path.join(PUBLIC_DIR, 'css'), { index: false, setHeaders: res => { res.set('Cache-Control', 'no-cache'); } }));
-// 本地化的 pdf.js（原来走 cdnjs，NAS 断外网就打不开书）
-// 注意：express@4 底层 send 用的 mime@1.6，不认识 .mjs，会当 octet-stream 发出去，
-// 浏览器会以"MIME 类型不匹配"直接拒绝执行模块脚本 —— 必须手动指定。
+// express@4's send uses mime@1.6, which does not know .mjs, so the type must be set or browsers refuse it.
 app.use('/vendor', express.static(path.join(PUBLIC_DIR, 'vendor'), {
   index: false,
   setHeaders: (res, filePath) => {
@@ -117,7 +87,6 @@ app.use('/vendor', express.static(path.join(PUBLIC_DIR, 'vendor'), {
 }));
 app.use(express.static(PUBLIC_DIR, { index: false }));
 
-// JWT 验证中间件（Header 或 Query 参数）
 function authMiddleware(req, res, next) {
   let token = null;
   const authHeader = req.headers.authorization;
@@ -145,9 +114,7 @@ function adminOnly(req, res, next) {
   next();
 }
 
-// ── 认证路由 ────────────────────────────────────────
-
-// 登录限速：同一 IP+账号 5 分钟内最多 10 次失败
+// Login rate limit: 10 failures per IP+account in 5 minutes.
 const loginAttempts = new Map();
 const LOGIN_WINDOW = 5 * 60 * 1000;
 const LOGIN_MAX_FAIL = 10;
@@ -170,7 +137,6 @@ function noteFail(key) {
     rec.count++;
   }
 }
-// 定期清理，避免 Map 无限增长
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of loginAttempts) if (now - v.first > LOGIN_WINDOW) loginAttempts.delete(k);
@@ -208,13 +174,9 @@ app.post('/api/login', async (req, res) => {
   res.json({ token, user: { username: result.username, role: result.role } });
 });
 
-// 校验 token 是否仍有效（客户端启动时调用，避免拿着过期 token 白转圈）
 app.get('/api/me', authMiddleware, async (req, res) => {
   res.json({ user: { username: req.user.username, role: req.user.role } });
 });
-
-// ── 扫描缓存 ────────────────────────────────────────
-// 原来每个路由都 scanAllLibs(true)，60s 缓存完全没生效。
 
 let _scanCache = null;
 let _scanMap = null;
@@ -239,17 +201,13 @@ async function scanAllLibs(force = false) {
       console.error(`[scan] 库 ${lib.path} 扫描失败:`, err.message);
     }
   }
-  /* 【2026-09-23】type 优先采用 sidecar 元数据的显式声明，其次按扩展名推断。
-     原实现硬编码按 ext 判断，导致放进 /novels 库的 PDF（法学教材等）
-     仍被判为 comic，无法出现在「小说」板块。 */
+  // Prefer the sidecar-declared type over extension sniffing, so a PDF in the novel library stays a novel.
   for (const c of all) {
     c.type = (c.metaType === 'novel' || c.metaType === 'comic')
       ? c.metaType
       : (['pdf', 'cbz', 'cbr'].includes(c.ext) ? 'comic' : 'novel');
   }
 
-  // 只预热本次扫描新增的漫画，避免每次全量预热（既省 CPU/IO，
-  // 也防止 _prewarming 锁导致新漫画的 prewarm 被旧预热吞掉）
   const prevIds = _scanCache ? new Set(_scanCache.map(c => c.id)) : new Set();
   const freshComics = all.filter(c => !prevIds.has(c.id));
   if (freshComics.length > 0) {
@@ -262,7 +220,6 @@ async function scanAllLibs(force = false) {
   return all;
 }
 
-/** id → comic 映射，跟扫描缓存同生命周期，避免每个路由重建 */
 async function getComicMap(force = false) {
   const list = await scanAllLibs(force);
   if (!_scanMap) {
@@ -276,9 +233,6 @@ async function findComic(id) {
   return (await getComicMap())[id] || null;
 }
 
-// ── 受保护路由 ──────────────────────────────────────
-
-// 继续阅读
 app.get('/api/continue', authMiddleware, async (req, res) => {
   const items = getContinueReading(req.user.username);
   const comicMap = await getComicMap();
@@ -294,7 +248,6 @@ app.get('/api/continue', authMiddleware, async (req, res) => {
   res.json(result);
 });
 
-// 收藏列表
 app.get('/api/bookmarks', authMiddleware, async (req, res) => {
   const items = getBookmarks(req.user.username);
   const comicMap = await getComicMap();
@@ -304,14 +257,12 @@ app.get('/api/bookmarks', authMiddleware, async (req, res) => {
     .map(item => ({
       ...comicMap[item.id],
       progress: { page: 0, bookmarked: true },
-      // 修复：item 是 progress 记录，没有 path 字段，必须从 comicMap 取
       hasCover: hasCover(item.id, comicMap[item.id].path)
     }));
 
   res.json(result);
 });
 
-// 搜索
 app.get('/api/search', authMiddleware, async (req, res) => {
   const q = (req.query.q || '').toLowerCase().trim();
   if (!q) return res.json([]);
@@ -333,7 +284,6 @@ app.get('/api/search', authMiddleware, async (req, res) => {
   })));
 });
 
-// 漫画详情
 app.get('/api/comic/:id/info', authMiddleware, async (req, res) => {
   const comic = await findComic(req.params.id);
   if (!comic) return res.status(404).json({ error: '漫画不存在' });
@@ -360,7 +310,6 @@ app.get('/api/comic/:id/info', authMiddleware, async (req, res) => {
   });
 });
 
-// 提供 PDF 文件（支持 Range 请求）
 app.get('/api/comic/:id/file', authMiddleware, async (req, res) => {
   const comic = await findComic(req.params.id);
   if (!comic) return res.status(404).json({ error: '漫画不存在' });
@@ -371,12 +320,10 @@ app.get('/api/comic/:id/file', authMiddleware, async (req, res) => {
   try { stat = fs.statSync(filePath); fileSize = stat.size; }
   catch { return res.status(404).json({ error: '文件已不存在，请刷新书架' }); }
 
-  // 解密统一在「入库」阶段完成（autodecrypt 常驻看门狗兜底），
-  // 库内恒为明文，阅读器只读明文，不在请求路径上做整本解密。
-  // 若漫画仍为加密态（异常来源），交由看门狗异步解密，不阻塞本次翻页请求。
+  // Files are decrypted when they enter the library; never decrypt a whole file inside the request path.
 
   const range = req.headers.range;
-  // 修复：原来不校验，"bytes=abc-" 会算出 NaN，chunkSize 变 NaN 直接把连接打死
+  // Range must be validated: "bytes=abc-" parses to NaN and kills the connection.
   const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
   if (m) {
     let start = m[1] === '' ? NaN : parseInt(m[1], 10);
@@ -385,7 +332,7 @@ app.get('/api/comic/:id/file', authMiddleware, async (req, res) => {
     if (Number.isNaN(start) && Number.isNaN(end)) {
       return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
     }
-    if (Number.isNaN(start)) {            // bytes=-500 → 最后 500 字节
+    if (Number.isNaN(start)) { // "bytes=-500" means the last 500 bytes.
       start = Math.max(0, fileSize - end);
       end = fileSize - 1;
     } else if (Number.isNaN(end)) {
@@ -418,7 +365,6 @@ app.get('/api/comic/:id/file', authMiddleware, async (req, res) => {
   }
 });
 
-// 提供 CBZ/CBR 中的单页图片
 app.get('/api/comic/:id/page/:pageNum', authMiddleware, async (req, res) => {
   const comic = await findComic(req.params.id);
   if (!comic) return res.status(404).json({ error: '漫画不存在' });
@@ -455,8 +401,6 @@ app.get('/api/comic/:id/page/:pageNum', authMiddleware, async (req, res) => {
     if (!res.headersSent) res.status(404).end();
   }
 });
-
-// ── EPUB 路由 ───────────────────────────────────────
 
 app.get('/api/comic/:id/epub/toc', authMiddleware, async (req, res) => {
   const comic = await findComic(req.params.id);
@@ -510,18 +454,14 @@ app.get('/api/comic/:id/epub/resource/*', authMiddleware, async (req, res) => {
   res.send(buffer);
 });
 
-// ── 封面 ────────────────────────────────────────────
-
 app.get('/api/comic/:id/cover', authMiddleware, async (req, res) => {
   const comic = await findComic(req.params.id);
   if (!comic) return res.status(404).json({ error: '漫画不存在' });
 
   try {
-    // 已缓存则直接返回；否则现场生成（预生成阶段通常已备好，这里只是兜底）
     const coverPath = await generate(comic.path, comic.id);
     if (coverPath && fs.existsSync(coverPath)) {
-      // res.sendFile 会：自动推断 image/jpeg、生成 ETag、处理 If-None-Match(304)、支持 Range
-      // immutable 告诉浏览器内容稳定，可长期缓存
+      // res.sendFile handles content-type, ETag/304 and Range for us.
       return res.sendFile(coverPath, {
         maxAge: 31536000,
         immutable: true,
@@ -537,11 +477,9 @@ app.get('/api/comic/:id/cover', authMiddleware, async (req, res) => {
     console.error('[cover]', comic.id, err.message);
   }
 
-  // 实在拿不到：404，前端用 pdf.js 现渲染后回传（PDF 加密等场景）
   res.status(404).end();
 });
 
-// 前端 pdf.js 渲染完的封面回传，落盘给其他设备复用
 app.post('/api/comic/:id/cover', authMiddleware, async (req, res) => {
   const comic = await findComic(req.params.id);
   if (!comic) return res.status(404).json({ error: '漫画不存在' });
@@ -552,8 +490,6 @@ app.post('/api/comic/:id/cover', authMiddleware, async (req, res) => {
   if (!saved) return res.status(400).json({ error: '图片无效或过大' });
   res.json({ success: true });
 });
-
-// ── 进度 / 收藏 ─────────────────────────────────────
 
 app.post('/api/comic/:id/progress', authMiddleware, async (req, res) => {
   const { page, totalPages } = req.body || {};
@@ -575,46 +511,36 @@ app.post('/api/comic/:id/bookmark', authMiddleware, async (req, res) => {
   res.json(result);
 });
 
-// ── 一键删除漫画（管理员 + 控制面板开关）─────────────────
-// 彻底删除：漫画本体 + 封面 + 全部元数据（进度/收藏/浏览/点赞/评论/书架）
 async function deleteComicFully(comic) {
   const id = comic.id;
   const errors = [];
 
-  // 1) 漫画本体（文件或目录）
   try {
     await fs.promises.rm(comic.path, { recursive: true, force: true });
   } catch (e) { errors.push('本体: ' + e.message); }
 
-  // 2) 封面：主缓存（漫画同目录 .thumbnails）与兜底缓存（DATA_DIR/thumbnails）
   const primaryCover = path.join(path.dirname(comic.path), '.thumbnails', `${id}.jpg`);
   const fallbackCover = path.join(DATA_DIR, 'thumbnails', `${id}.jpg`);
   for (const f of [primaryCover, fallbackCover]) {
-    try { await fs.promises.rm(f, { force: true }); } catch (e) { /* 封面可能不存在 */ }
+    try { await fs.promises.rm(f, { force: true }); } catch (e) {  }
   }
 
-  // 3) 进度 / 收藏（所有用户）
   try { removeComicFromAllUsers(id); } catch (e) { errors.push('进度: ' + e.message); }
 
-  // 4) 浏览量
   try { viewsStore.update(v => { delete v[id]; }); } catch (e) { errors.push('浏览: ' + e.message); }
 
-  // 5) 点赞
   try { likesStore.update(l => { delete l[id]; }); } catch (e) { errors.push('点赞: ' + e.message); }
 
-  // 6) 评论
   try {
     const safe = String(id).replace(/[^\w.-]/g, '_').slice(0, 128);
     await fs.promises.rm(path.join(commentsDir, `${safe}.json`), { force: true });
-  } catch (e) { /* 可能没有评论文件 */ }
+  } catch (e) {  }
 
-  // 6b) 批注
   try {
     const safeA = String(id).replace(/[^\w.-]/g, '_').slice(0, 128);
     await fs.promises.rm(path.join(annotationsDir, `${safeA}.json`), { force: true });
-  } catch (e) { /* 可能没有批注文件 */ }
+  } catch (e) {  }
 
-  // 7) 书架：从每位用户的书架里移除该漫画
   try {
     if (fs.existsSync(shelvesDir)) {
       for (const f of fs.readdirSync(shelvesDir)) {
@@ -625,14 +551,13 @@ async function deleteComicFully(comic) {
           const changed = Array.isArray(shelves) && shelves.some(s => s.items && s.items.includes(id));
           if (changed) {
             const next = shelves.map(s => s.items ? { ...s, items: s.items.filter(it => it !== id) } : s);
-            getStore(fp, []).set(next); // 原子写：tmp + rename，避免并发/崩溃截断书架文件
+            getStore(fp, []).set(next);
           }
-        } catch (e) { /* 跳过损坏文件 */ }
+        } catch (e) {  }
       }
     }
   } catch (e) { errors.push('书架: ' + e.message); }
 
-  // 8) 刷新扫描缓存，让漫画立即从书架消失
   try { await scanAllLibs(true); } catch (e) { errors.push('刷新缓存: ' + e.message); }
 
   return errors;
@@ -656,14 +581,12 @@ app.delete('/api/comic/:id', authMiddleware, adminOnly, async (req, res) => {
   res.json({ success: true, deleted: comic.name });
 });
 
-// ── 管理员 API ─────────────────────────────────────
 const { listUsers } = require('./lib/auth');
 
 app.get('/api/admin/users', authMiddleware, adminOnly, async (req, res) => {
   res.json(listUsers());
 });
 
-// 操作日志查询（仅管理员）：默认最新在前，支持按账号/动作/结果过滤
 app.get('/api/admin/audit', authMiddleware, adminOnly, async (req, res) => {
   const data = await audit.query({
     limit: req.query.limit,
@@ -731,7 +654,6 @@ app.put('/api/admin/users/:username/role', authMiddleware, adminOnly, async (req
   res.json({ success: true });
 });
 
-// ── 库管理（Emby 式存储路径） ────────────────────────
 const libsFile = path.join(DATA_DIR, 'libraries.json');
 const libsStore = getStore(libsFile, []);
 
@@ -744,7 +666,6 @@ function writeLibs(libs) {
   invalidateScan();
 }
 
-// 初始化默认库 + 小说目录
 if (!fs.existsSync(libsFile)) {
   const defaultLibs = [{ id: 1, path: COMICS_DIR, name: '漫画' }];
   const novelPath = process.env.NOVEL_DIR || '';
@@ -789,14 +710,12 @@ app.delete('/api/admin/libraries/:id', authMiddleware, adminOnly, async (req, re
   res.json({ success: true });
 });
 
-// ── 自动解密设置 ─────────────────────────────────────
 app.get('/api/admin/settings', authMiddleware, adminOnly, async (req, res) => {
   res.json(getSettings());
 });
 
 app.post('/api/admin/settings', authMiddleware, adminOnly, async (req, res) => {
   const updated = saveSettings(req.body || {});
-  // 管理员开启自动解密的瞬间，立即跑一次扫描
   if (updated.autoDecrypt) {
     autoDecryptOnce(readLibs())
       .then(s => console.log(`[autodecrypt] 手动触发 扫描=${s.scanned} 解密=${s.decrypted} 失败=${s.failed}`))
@@ -809,32 +728,24 @@ app.post('/api/admin/settings', authMiddleware, adminOnly, async (req, res) => {
   res.json({ success: true, settings: updated });
 });
 
-// 书架扫描——支持多库 + 类型分类 + 缓存刷新
 app.get('/api/library', authMiddleware, async (req, res) => {
   try {
-    const typeFilter = req.query.type; // comic | novel | undefined=全部
+    const typeFilter = req.query.type;
     const forceRefresh = req.query.refresh === '1';
     const allComics = await scanAllLibs(forceRefresh);
 
     const progress = getUserProgress(req.user.username);
 
-    // ── 条件请求（ETag / 304）──
-    // /api/library 响应体约 1.26MB，是首屏最大的传输项，且前端此前会重复拉多次。
-    // 这里用「扫描版本 + 用户 + 类型 + 结果规模 + 进度摘要」构造 ETag：命中即 304，
-    // 连 JSON 序列化都省掉。刻意不对完整响应体求 hash —— 那要先把 1MB 序列化出来，等于没省。
     const progHash = crypto.createHash('md5').update(JSON.stringify(progress)).digest('hex').slice(0, 10);
     const etag = `W/"lib-${_scanTime}-${req.user.username}-${typeFilter || 'all'}-${allComics.length}-${progHash}"`;
-    res.set('Cache-Control', 'no-cache');   // 允许缓存但每次回源校验
-    res.set('Vary', 'Authorization');       // 换账号必须换缓存桶，避免串数据
+    res.set('Cache-Control', 'no-cache'); // The cache bucket is per user, so switching accounts cannot reuse it.
+    res.set('Vary', 'Authorization');
     res.set('ETag', etag);
     if (req.headers['if-none-match'] === etag) return res.status(304).end();
 
     const filtered = typeFilter ? allComics.filter(c => c.type === typeFilter) : allComics;
     const bookmarks = new Set(Object.entries(progress).filter(([, v]) => v && v.bookmarked).map(([id]) => id));
 
-    // 只下发前端真正消费的字段。path / relativePath / fullTitle / artists / genres /
-    // publishedAt / language / status / chapterCount 经前端全量 grep 确认零引用，
-    // 剔除后单条记录体积约降 29%（详见性能报告 §优化）。
     const decorate = c => ({
       id: c.id,
       name: c.name,
@@ -862,7 +773,6 @@ app.get('/api/library', authMiddleware, async (req, res) => {
     }
     const seriesList = Object.entries(seriesMap).map(([name, items]) => ({ name, count: items.length, items }));
 
-    // 最近添加：优先展示「今日添加」的漫画；若今日无添加，顺延到最近一个有添加的日子；上限 100 本
     const dayKeyOf = d => {
       const dt = new Date(d);
       if (isNaN(dt.getTime())) return null;
@@ -880,7 +790,6 @@ app.get('/api/library', authMiddleware, async (req, res) => {
     const todayKey = dayKeyOf(new Date());
     let recentKey = todayKey;
     if (!byDay[recentKey] || byDay[recentKey].length === 0) {
-      // 今日无添加，向前顺延到最近一个有添加的日子
       const descKeys = Object.keys(byDay).sort((a, b) => (a < b ? 1 : -1));
       recentKey = descKeys.find(k => byDay[k].length > 0) || recentKey;
     }
@@ -908,11 +817,10 @@ app.get('/api/library', authMiddleware, async (req, res) => {
   }
 });
 
-// ── 自定义书架 ─────────────────────────────────────
 const shelvesDir = path.join(DATA_DIR, 'shelves');
 
 function safeUserName(username) {
-  // 防止 ../ 之类的用户名把文件写到别处
+  // Reject "../" in usernames, otherwise the file lands outside the data dir.
   return String(username).replace(/[^\w.@-]/g, '_').slice(0, 64) || 'user';
 }
 function shelvesStore(username) {
@@ -983,7 +891,6 @@ app.get('/api/shelves/:id', authMiddleware, async (req, res) => {
   });
 });
 
-// ── 阅读统计与排行榜 ─────────────────────────────────
 const viewsStore = getStore(path.join(DATA_DIR, 'views.json'), {});
 const likesStore = getStore(path.join(DATA_DIR, 'likes.json'), {});
 
@@ -998,8 +905,6 @@ app.post('/api/comic/:id/view', authMiddleware, async (req, res) => {
   });
   res.json({ success: true, count });
 });
-
-// ── 点赞/爱心 ──────────────────────────────────────
 
 function likeCount(likes, id) {
   let total = 0;
@@ -1028,7 +933,6 @@ app.get('/api/likes', authMiddleware, async (req, res) => {
   res.json({ items: likes[req.user.username] || [] });
 });
 
-// ── 评论区（匿名 + 昵称，存本地 JSON，按 comic id 分文件） ──
 const commentsDir = path.join(DATA_DIR, 'comments');
 function commentsStore(id) {
   const safe = String(id).replace(/[^\w.-]/g, '_').slice(0, 128);
@@ -1054,8 +958,7 @@ app.post('/api/comic/:id/comments', authMiddleware, async (req, res) => {
   res.json({ success: true, comment: entry });
 });
 
-// ── 批注 / 笔记（按 comic id 分文件；含章节、原文、批注、颜色） ──
-// 前端在 EPUB 阅读器里选中文字 → 高亮 + 写批注；锚点 = 章节号 + 原文 + 第几次出现
+// Anchor = chapter index + original text + occurrence count.
 const annotationsDir = path.join(DATA_DIR, 'annotations');
 const ANNOT_COLORS = ['yellow', 'green', 'blue', 'pink'];
 function annotationsStore(id) {
@@ -1110,8 +1013,7 @@ app.delete('/api/comic/:id/annotations/:aid', authMiddleware, async (req, res) =
   res.json({ success: store.read().length < before });
 });
 
-// ── AI 章节总结（按 comic id 分文件，key = 章节目录序号） ──
-// 结构: { "0": { title, framework:[{t,items:[]}], concepts:[{term,desc}], statutes:[{law,article,note}], qa:[{q,a}], tips:[] } }
+// { [chapterIndex]: { title, framework, concepts, statutes, qa, tips } }
 const summariesDir = path.join(DATA_DIR, 'summaries');
 function summariesStore(id) {
   const safe = String(id).replace(/[^\w.-]/g, '_').slice(0, 128);
@@ -1144,10 +1046,6 @@ app.get('/api/comic/:id/likes', authMiddleware, async (req, res) => {
   });
 });
 
-// ── 在线模块（可插拔多源，默认全关，见 lib/sources/sources.json）：搜索 / 详情 / 章节 ──
-// 已启用源由 ONLINE_SOURCE 决定（逗号列表 / all / 不设置则用 enabledByDefault）。
-
-// 已启用源列表（前端渲染源切换器）
 app.get('/api/online/sources', authMiddleware, (req, res) => {
   const enabled = onlineSources.getEnabled();
   res.json({
@@ -1156,7 +1054,6 @@ app.get('/api/online/sources', authMiddleware, (req, res) => {
   });
 });
 
-// 在线模块状态（前端据此决定是否展示「未启用」提示，无需先触发搜索）
 app.get('/api/online/status', authMiddleware, async (req, res) => {
   res.json({
     enabled: onlineSources.isEnabled(),
@@ -1165,7 +1062,6 @@ app.get('/api/online/status', authMiddleware, async (req, res) => {
   });
 });
 
-// 搜索：跨所有已启用源并发查询并合并；每条结果打上 _source 标记以便后续路由
 app.get('/api/online/search', authMiddleware, async (req, res) => {
   const enabled = onlineSources.getEnabled();
   if (!enabled.length) {
@@ -1188,11 +1084,9 @@ app.get('/api/online/search', authMiddleware, async (req, res) => {
       console.error(`[online/search:${s.key}]`, err.message);
     }
   }));
-  // maxPage 取各源的最大值（原硬编码 1，多源或分页时前端永远认为只有 1 页）
   res.json({ total: merged.length, maxPage: Math.max(1, ...maxPages), comics: merged });
 });
 
-// 详情：按 ?source= 选择源（缺省用首个启用源）
 app.get('/api/online/album/:id', authMiddleware, async (req, res) => {
   const source = onlineSources.getSource(req.query.source) || onlineSources.getActiveSource();
   if (!source) return res.status(403).json({ error: '在线漫画模块未启用' });
@@ -1206,7 +1100,6 @@ app.get('/api/online/album/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// 章节：按 ?source= 选择源
 app.get('/api/online/chapter/:id', authMiddleware, async (req, res) => {
   const source = onlineSources.getSource(req.query.source) || onlineSources.getActiveSource();
   if (!source) return res.status(403).json({ error: '在线漫画模块未启用' });
@@ -1219,8 +1112,6 @@ app.get('/api/online/chapter/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// ── 在线图片代理（通用：拉取 + 按 URL 自动路由到认得它的源做还原，绕过防盗链） ──
-// 前端 <img> 直接引用本端点即可显示还原后的图片，无需自己处理 Referer/乱序。
 app.get('/api/online/img', authMiddleware, async (req, res) => {
   const url = (req.query.url || '').trim();
   if (!url) return res.status(400).json({ error: '缺少 url 参数' });
@@ -1236,9 +1127,6 @@ app.get('/api/online/img', authMiddleware, async (req, res) => {
   }
 });
 
-// ── 在线章节 → 本地库（异步下载任务：逐页拉图 → 合成 PDF → 原子入库）──
-// 在线阅读逐张走代理，慢且受源站可用性影响；下载入库后即可走本地 PDF 通道。
-// 任务异步执行：单章节可能上百页，同步请求必然超时，故用 job + 轮询。
 const ONLINE_DL_DIR = process.env.ONLINE_DOWNLOAD_DIR || COMICS_DIR;
 const ONLINE_DL_MAX_EPISODES = 200;
 
@@ -1289,19 +1177,17 @@ app.post('/api/online/download', authMiddleware, async (req, res) => {
   res.json({ ok: true, jobId: started.job.id, targetDir: ONLINE_DL_DIR });
 });
 
-// 下载历史（持久化，重启不丢）。注意这条必须放在 :jobId 之前，避免被它吞掉。
+// Must be registered before /:jobId, otherwise that route swallows it.
 app.get('/api/online/downloads', authMiddleware, (req, res) => {
   res.json(listHistory({ limit: req.query.limit, offset: req.query.offset }));
 });
 
-// 下载进度轮询
 app.get('/api/online/download/:jobId', authMiddleware, (req, res) => {
   const job = getJob(req.params.jobId);
   if (!job) return res.status(404).json({ error: '任务不存在或已过期' });
   res.json(publicJob(job));
 });
 
-// ── AstrBot 联动（后端代理：凭据存服务端，绝不下发前端） ──
 const astrbotConfigFile = path.join(DATA_DIR, 'astrbot_config.json');
 function loadAstrbotConfig() {
   try { return JSON.parse(fs.readFileSync(astrbotConfigFile, 'utf8')); }
@@ -1310,7 +1196,7 @@ function loadAstrbotConfig() {
 function saveAstrbotConfig(cfg) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const existing = loadAstrbotConfig();
-  // 密码留空 = 不修改（保留原密码），避免误清空
+  // An empty password means "keep the current one".
   const password = (cfg.password && cfg.password.length) ? cfg.password : (existing.password || '');
   fs.writeFileSync(astrbotConfigFile, JSON.stringify({
     address: (cfg.address || '').trim(),
@@ -1321,12 +1207,10 @@ function saveAstrbotConfig(cfg) {
 function safeParse(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
-/** 防止 SSRF：拒绝内网私有/回环地址 */
+// Reject private and loopback targets.
 function isPrivateHost(hostname) {
-  // 允许的主机名白名单（本地 AstrBot 地址）
-  if (/^192\.168\.\d+\.\d+$/.test(hostname)) return false; // 家庭内网放行
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return false; // 本地放行
-  // 拒绝私有/保留地址段
+  if (/^192\.168\.\d+\.\d+$/.test(hostname)) return false;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') return false;
   if (net.isIP(hostname)) {
     const ip = hostname;
     if (ip.startsWith('10.') || ip.startsWith('172.16.') || ip.startsWith('192.168.')) return true;
@@ -1335,12 +1219,10 @@ function isPrivateHost(hostname) {
   return false;
 }
 
-// 简单 HTTP JSON 请求；对 SSE 响应抓取第一条 plain 回复。返回 {status, body, plain}
 function astrbotHttp(method, urlStr, token, bodyObj) {
   return new Promise((resolve, reject) => {
     let u;
     try { u = new URL(urlStr); } catch { return reject(new Error('AstrBot 地址无效：' + urlStr)); }
-    // SSRF 防护：拒绝内网高危地址
     if (isPrivateHost(u.hostname)) {
       return reject(new Error('安全限制：不允许访问内网地址 ' + u.hostname));
     }
@@ -1379,7 +1261,6 @@ function astrbotHttp(method, urlStr, token, bodyObj) {
   });
 }
 
-// 向 AstrBot 发送指令：SSE 流可能持续很久（下载进度），只要收到响应头即视为发送成功
 function astrbotSendCommand(base, token, sid, command) {
   return new Promise((resolve, reject) => {
     const urlStr = base + '/api/v1/chat';
@@ -1401,7 +1282,6 @@ function astrbotSendCommand(base, token, sid, command) {
       },
       timeout: 15000
     }, (res) => {
-      // 收到响应头就结束，不再等待 SSE 体
       res.resume();
       resolve({ status: res.statusCode });
     });
@@ -1417,7 +1297,6 @@ function astrbotBase(cfg) {
   if (!/^https?:\/\//i.test(a)) a = 'http://' + a;
   return a.replace(/\/+$/, '');
 }
-// 登录 AstrBot 并返回 base + token（供命令/会话/附件复用）
 async function astrbotLogin(cfg) {
   const base = astrbotBase(cfg);
   const login = await astrbotHttp('POST', base + '/api/v1/auth/login', null, { username: cfg.username, password: cfg.password });
@@ -1428,7 +1307,7 @@ async function astrbotLogin(cfg) {
 }
 app.get('/api/astrbot/config', authMiddleware, async (req, res) => {
   const c = loadAstrbotConfig();
-  res.json({ address: c.address || '', username: c.username || '' }); // 不下发密码
+  res.json({ address: c.address || '', username: c.username || '' });
 });
 app.post('/api/astrbot/config', authMiddleware, async (req, res) => {
   const { address, username, password } = req.body || {};
@@ -1441,7 +1320,6 @@ app.post('/api/astrbot/command', authMiddleware, async (req, res) => {
   if (!cfg.address || !cfg.username) {
     return res.json({ status: 'error', code: 'no_config', message: 'AstrBot 未配置，请先在弹窗里填好地址 / 账号 / 密码' });
   }
-  // 支持直接透传完整指令（command），兼容旧的 query+type 写法
   let command = (req.body.command || '').toString().trim();
   if (!command) {
     const query = (req.body.query || '').toString().trim();
@@ -1461,14 +1339,12 @@ app.post('/api/astrbot/command', authMiddleware, async (req, res) => {
     if (send.status !== 200 && send.status !== 201) {
       return res.json({ status: 'error', message: 'AstrBot 发送失败（HTTP ' + send.status + '）' });
     }
-    // 返回 sessionId 供前端轮询完整会话（含进度/详情/图片）
     res.json({ status: 'ok', command, reply: '', sessionId: sid, address: cfg.address });
   } catch (e) {
     res.json({ status: 'error', message: '调用 AstrBot 出错：' + (e.message || e) });
   }
 });
 
-// 轮询 AstrBot 会话历史（文字 + 图片附件），用于展示详情与下载进度
 app.get('/api/astrbot/session/:id', authMiddleware, async (req, res) => {
   const cfg = loadAstrbotConfig();
   if (!cfg.address || !cfg.username) {
@@ -1493,7 +1369,6 @@ app.get('/api/astrbot/session/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// 代理 AstrBot 图片附件（二进制透传），前端 <img> 直接引用
 app.get('/api/astrbot/attachment/:sid/:aid', authMiddleware, async (req, res) => {
   const cfg = loadAstrbotConfig();
   if (!cfg.address || !cfg.username) return res.status(401).end();
@@ -1523,7 +1398,6 @@ app.get('/api/astrbot/attachment/:sid/:aid', authMiddleware, async (req, res) =>
   }
 });
 
-// 排行榜（本周 + 总榜，爱心参与排名）
 app.get('/api/ranking', authMiddleware, async (req, res) => {
   const views = viewsStore.read();
   const likes = likesStore.read();
@@ -1541,7 +1415,7 @@ app.get('/api/ranking', authMiddleware, async (req, res) => {
       type: comicMap[id].type,
       views: v,
       likes: l,
-      score: v + l * 3,   // 综合分 = 阅读数 + 爱心数 × 3
+      score: v + l * 3,
       lastView: (views[id] || {}).lastView,
       hasCover: hasCover(id, comicMap[id].path)
     };
@@ -1556,8 +1430,6 @@ app.get('/api/ranking', authMiddleware, async (req, res) => {
   res.json({ weekly, allTime });
 });
 
-// ── SPA fallback ────────────────────────────────────
-
 app.get('/', async (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'login.html'));
 });
@@ -1570,27 +1442,23 @@ app.get('/admin', async (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'admin.html'));
 });
 
-// 未知 API 一律返回 JSON，别让前端 JSON.parse 吃到 HTML
+// Unknown API routes return JSON, never the HTML shell.
 app.use('/api', async (req, res) => {
   res.status(404).json({ error: '接口不存在' });
 });
 
-// 全局错误处理（Express 4 会捕获同步抛出的异常）
 app.use((err, req, res, next) => {
   console.error('[error]', req.method, req.originalUrl, err);
   if (res.headersSent) return next(err);
   res.status(500).json({ error: '服务器内部错误' });
 });
 
-// 兜底：别让一个未捕获的 Promise 拒绝把整个阅读器搞挂
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason);
 });
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
 });
-
-// ── 启动 ────────────────────────────────────────────
 
 if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
@@ -1599,7 +1467,6 @@ if (require.main === module) {
     console.log(`💾 Data directory: ${DATA_DIR}`);
     console.log(`🔐 JWT secret: ${JWT_SECRET.slice(0, 8)}... (持久化)`);
 
-    // 自动解密调度：管理员在控制面板开启后，周期性把库里仍为加密的 PDF 原地解密
     startAutoDecryptScheduler(readLibs);
   });
 }

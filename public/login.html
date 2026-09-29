@@ -10,7 +10,6 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <style>
-    /* 与主界面 (fnos-theme.css) 同一套设计语言：环境光渐变背景 + 玻璃态卡片 + 统一强调色 */
     :root {
       --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif;
       --spring: cubic-bezier(0.32, 0.72, 0, 1);
@@ -30,7 +29,6 @@
       padding: 24px; -webkit-font-smoothing: antialiased;
     }
 
-    /* 环境光斑（与主界面 ambient-bg 一致的观感） */
     .bg-glow { position: fixed; border-radius: 50%; filter: blur(110px); pointer-events: none; z-index: 0; }
     .bg-glow-1 { width: 460px; height: 460px; top: -170px; left: -130px; background: rgba(10, 132, 255, 0.20); }
     .bg-glow-2 { width: 400px; height: 400px; bottom: -150px; right: -110px; background: rgba(94, 92, 230, 0.16); }
@@ -123,10 +121,8 @@
         <p class="sub">使用飞牛 NAS 账号一键登录</p>
       </div>
 
-      <!-- 一键登录提示 -->
       <div class="oneclick-badge">🔑 NAS 账号登录</div>
 
-      <!-- 表单 -->
       <div class="input-group"><input type="text" id="username" placeholder="NAS 用户名" autocomplete="username" autofocus></div>
       <div class="input-group"><input type="password" id="password" placeholder="NAS 密码" autocomplete="current-password"></div>
 
@@ -193,14 +189,11 @@
 
     document.addEventListener('keydown', function(e) { if (e.key === 'Enter') doLogin(); });
 
-    // 自动填充上次记住的用户名
     var saved = localStorage.getItem('fn_comic_remembered_user');
     if (saved) { document.getElementById('username').value = saved; document.getElementById('password').focus(); }
 
-    // 已登录直接跳转
     if (localStorage.getItem('fn_comic_token')) { window.location.href = API + '/app'; }
 
-    // 同步主题
     var savedTheme = localStorage.getItem('fn_comic_theme');
     if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
   </script>

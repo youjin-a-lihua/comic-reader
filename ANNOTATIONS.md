@@ -1,5 +1,7 @@
 # 阅读器「批注 / 笔记」+「AI 章节总结」—— 功能说明
 
+> English version: [ANNOTATIONS.en.md](ANNOTATIONS.en.md)
+
 > 起于 v1.4.0（2026-09-24）。适用于 EPUB 阅读模式。
 
 ## 一、做了什么

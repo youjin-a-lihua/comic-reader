@@ -6,7 +6,6 @@
 <title>管理后台 — 漫画阅读器</title>
 <link rel="stylesheet" href="/css/fnos-theme.css">
 <style>
-/* 与主界面 fnos-theme.css 同一套设计语言：同一背景渐变 / 玻璃态卡片 / 统一强调色 */
 body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%, #050507 100%); min-height: 100vh; }
 .admin-container { max-width: 660px; margin: 0 auto; padding: 32px 20px 64px; }
 .admin-card {
@@ -50,7 +49,6 @@ body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%,
 .msg-error { color: #ff453a; }
 .msg-ok { color: #30d158; }
 
-/* ── 操作日志 ── */
 .log-toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .log-toolbar select {
   flex: 1; min-width: 108px; height: 36px; background: rgba(255,255,255,0.05);
@@ -78,7 +76,6 @@ body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%,
 <div class="admin-container">
 <a class="btn-back" href="/app">← 返回书架</a>
 
-<!-- 操作日志 -->
 <div class="admin-card">
 <h2>操作日志 <span class="card-sub">（仅管理员可见）</span></h2>
 <div class="log-toolbar">
@@ -90,7 +87,6 @@ body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%,
 <div class="log-more" id="logMore" style="display:none"><button class="btn btn-ghost" onclick="loadAudit(logOffset)">加载更多</button></div>
 </div>
 
-<!-- 用户管理 -->
 <div class="admin-card">
 <h2>用户管理</h2>
 <div class="form-row">
@@ -101,7 +97,6 @@ body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%,
 <ul class="user-list" id="userList"></ul>
 </div>
 
-<!-- 库管理 -->
 <div class="admin-card">
 <h2>库管理 <span style="font-size:12px;color:#636368;font-weight:400">（存储路径）</span></h2>
 <div class="form-row">
@@ -113,7 +108,6 @@ body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%,
 <ul class="lib-list" id="libList"></ul>
 </div>
 
-<!-- 自动解密 -->
 <div class="admin-card">
 <h2>自动解密 JM 加密漫画 <span style="font-size:12px;color:#636368;font-weight:400">（默认关闭）</span></h2>
 <p style="font-size:12px;color:#98989d;margin:0 0 14px;line-height:1.6">
@@ -133,7 +127,6 @@ body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%,
 <div class="msg" id="decryptMsg"></div>
 </div>
 
-<!-- 删除漫画 -->
 <div class="admin-card">
 <h2>允许删除漫画 <span style="font-size:12px;color:#636368;font-weight:400">（默认关闭 · 高危）</span></h2>
 <p style="font-size:12px;color:#98989d;margin:0 0 14px;line-height:1.6">
@@ -161,7 +154,6 @@ async function api(path,opts){
  return r;
 }
 
-// Users
 async function loadUsers(){
  try{
   var r=await api('/api/admin/users'); var users=await r.json();
@@ -194,7 +186,6 @@ async function setRole(u,role){
  if(r.ok) loadUsers(); else showMsg('addMsg',d.error,1);
 }
 
-// Libraries (Emby-style storage path management)
 async function loadLibs(){
  try{
   var r=await api('/api/admin/libraries'); var libs=await r.json();
@@ -216,7 +207,6 @@ async function delLib(id){ if(!confirm('删除此库？')) return;
  if(r.ok) loadLibs();
 }
 
-// 自动解密设置
 async function loadSettings(){
  try{
   var r=await api('/api/admin/settings'); var s=await r.json();
@@ -241,7 +231,6 @@ async function saveSettings(){
 function showMsg(id,text,err){ var el=document.getElementById(id); el.textContent=text; el.className='msg '+(err?'msg-error':'msg-ok'); }
 function esc(s){ var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
-// ── 操作日志（仅管理员可见）──────────────────────
 var logOffset = 0;
 var ACTION_LABEL = {
   'login': '登录', 'delete-comic': '删除漫画', 'online-download': '下载入库',
@@ -272,7 +261,6 @@ async function loadAudit(offset) {
     var d = await r.json();
     if (!r.ok) { list.innerHTML = '<div class="log-empty">' + esc(d.error || '加载失败') + '</div>'; return; }
 
-    // 首次加载时填充筛选项
     var us = document.getElementById('logUser');
     if (us.options.length <= 1) {
       var seen = {};

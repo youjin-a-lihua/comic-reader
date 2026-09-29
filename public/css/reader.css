@@ -1,16 +1,10 @@
-/* ═══════════════════════════════════════
-   漫画 / EPUB 阅读器样式
-   阅读器始终暗色背景，不受主题影响
-   ═══════════════════════════════════════ */
+/* Reader styles; the reader is always dark regardless of theme. */
 
-/* ── 阅读器容器 ── */
 .reader-container {
   position: fixed;
   inset: 0;
   background: #000;
-  /* 【2026-09-22】1000 -> 2000：阅读器是全屏独占层，必须高于详情页内容
-     （详情页的 .detail-back 已调整为 900）。原先 1000 与部分详情页元素过于接近，
-     且曾低于 detail-back 的 9999，导致返回键穿层。 */
+  /* The reader layer must sit above the detail page. iOS Safari is unreliable with z-index on fixed layers, so the layers below are hidden rather than stacked under. */
   z-index: 2000;
   display: flex;
   flex-direction: column;
@@ -20,7 +14,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* ── 顶栏 ── */
 .reader-topbar {
   display: flex; align-items: center; padding: 8px 12px; gap: 12px;
   background: rgba(0,0,0,0.7); backdrop-filter: blur(12px); z-index: 10;
@@ -43,11 +36,10 @@
 }
 .reader-topbar .tool-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
 
-/* ── 阅读区域 ── */
 .reader-viewport {
   flex: 1; display: flex; align-items: center; justify-content: center;
   overflow: hidden; position: relative;
-  touch-action: auto; /* 浏览器处理滚动，JS 接管双指 */
+  touch-action: auto;
 }
 .reader-viewport canvas {
   max-width: 100%; max-height: 100%; object-fit: contain;
@@ -62,14 +54,12 @@
   box-shadow: 0 2px 20px rgba(0,0,0,0.5);
 }
 
-/* 点击翻页 */
 .tap-zone {
   position: absolute; top: 0; bottom: 0; width: 30%; z-index: 5; cursor: pointer;
 }
 .tap-zone.prev { left: 0; }
 .tap-zone.next { right: 0; }
 
-/* ── 底栏 ── */
 .reader-bottombar {
   display: flex; align-items: center; padding: 10px 16px 14px; gap: 12px;
   background: rgba(0,0,0,0.7); backdrop-filter: blur(12px); z-index: 10;
@@ -113,14 +103,12 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── 滚动模式 ── */
 .reader-viewport.scroll-mode {
   display: block;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-y; /* 纵向滚动交给浏览器，双指缩放 JS 接管 */
-  /* 每页占满一屏：吸附到整页，一次滑动最多只落在一页上（友商分页阅读标准做法） */
+  touch-action: pan-y;
   scroll-snap-type: y mandatory;
 }
 .scroll-pages {
@@ -149,7 +137,6 @@
   border-radius: 8px;
 }
 
-/* ── EPUB 阅读器 ── */
 .epub-reader {
   position: fixed; inset: 0; background: #1a1a22;
   display: flex; flex-direction: column; z-index: 1000;
@@ -207,7 +194,6 @@
 
 .epub-tap-zone {
   position: absolute; top: 0; bottom: 0; z-index: 5; cursor: pointer;
-  /* 自适应：宽屏时收窄到正文列之外，避免挡住文字选择（EPUB 正文列 max-width:720px + padding） */
   width: max(10%, calc((100% - 800px) / 2));
 }
 .epub-tap-zone.prev { left: 0; }
@@ -225,7 +211,6 @@
 .epub-font-label { font-size: 11px; color: rgba(255,255,255,0.5); min-width: 36px; text-align: center; }
 .epub-progress { font-size: 12px; color: rgba(255,255,255,0.5); white-space: nowrap; }
 
-/* ── 响应式 ── */
 @media (max-width: 640px) {
   .reader-topbar { padding: 6px 10px; }
   .reader-bottombar { padding: 8px 12px 12px; }
@@ -234,11 +219,6 @@
   .pdf-sidebar { width: 260px; }
 }
 
-/* ═══════════════════════════════════════
-   PDF 章节目录（Gemini 设计理念）
-   ═══════════════════════════════════════ */
-
-/* ── PDF 阅读器目录侧边栏（阅读器恒暗色，仿 epub-sidebar） ── */
 .pdf-sidebar {
   position: fixed; top: 0; left: 0; bottom: 0; width: 280px;
   background: rgba(22,22,30,0.98); z-index: 100;
@@ -273,7 +253,6 @@
 .pdf-toc-index { color: #0a84ff; font-size: 11px; font-weight: 600; flex-shrink: 0; min-width: 20px; }
 .pdf-toc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── 详情页章节目录网格（随暗/亮/暖三主题，统一 CSS 变量） ── */
 .detail-chapter-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
@@ -301,8 +280,6 @@
 .detail-chapter-no { font-size: 11px; color: var(--accent, #0A84FF); font-weight: 600; }
 .detail-chapter-item:hover .detail-chapter-no { color: rgba(255,255,255,0.9); }
 
-
-/* ── 系列入口卡片（搜索引擎聚合） ── */
 .series-entry { position: relative; }
 .series-badge {
   position: absolute; top: 6px; right: 6px;
@@ -315,7 +292,6 @@
 .series-entry .title { font-size: 13px; line-height: 1.35; }
 .series-entry:hover { transform: translateY(-1px); }
 
-/* ── 漫画页按标签分块：块标题（标签名） ── */
 .series-header {
   display: flex;
   align-items: baseline;
@@ -338,16 +314,12 @@
 }
 [data-theme="light"] .series-header h2 { color: var(--text-main, #1a1a1a); }
 [data-theme="light"] .series-header { border-bottom-color: rgba(0,0,0,0.08); }
-/* ═══════════════════════════════════════════════════════
-   阅读器返回体验增强：悬浮返回胶囊与快速脱离动画
-   ═══════════════════════════════════════════════════════ */
 
-/* 悬浮自适应返回胶囊 */
 .reader-floating-back {
   position: fixed;
   top: max(16px, env(safe-area-inset-top));
   left: max(16px, env(safe-area-inset-left));
-  z-index: 2147483640; /* 置于阅读视口与控制层最前 */
+  z-index: 2147483640;
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -377,7 +349,6 @@
   transform: scale(0.92);
 }
 
-/* 闲置幽灵态：阅读 3 秒后弱化至接近不可见，不遮挡作画 */
 .reader-floating-back.ghost {
   opacity: 0.12;
 }
@@ -392,42 +363,16 @@
   fill: none;
 }
 
-/* 阅读器容器即时退出状态机 */
 #reader.exiting {
   opacity: 0 !important;
   pointer-events: none !important;
   transition: opacity 0.15s ease-out !important;
 }
 
-/* ══════════════════════════════════════════════════════════
-   【2026-09-22 修正】悬浮返回胶囊恢复启用（上一版的 display:none 兜底已撤销）。
-   定位：阅读器顶栏被折叠（点屏幕空白处会自动折叠）时，它是唯一的返回入口。
-   显隐由 JS 的 setFloatingBackVisible() 与顶栏状态互斥控制：
-     顶栏可见 → 胶囊隐藏；顶栏折叠 → 胶囊显示。两者永不同时出现。
-   ══════════════════════════════════════════════════════════ */
 #readerFloatingBack {
-  display: none;          /* 默认隐藏，由 JS 按顶栏状态切换为 flex */
+  display: none;
 }
 
-/* ══════════════════════════════════════════════════════════════════════
-   【2026-09-22 根因修复】阅读器独占模式
-   ──────────────────────────────────────────────────────────────────────
-   背景：reader.js 一直在 openReader/closeReader 里 add/remove 'reader-mode'
-   类，但三个 CSS 文件里都【没有任何 reader-mode 规则】—— 等于白加。
-
-   后果：打开阅读器时下层 #page-detail 仍是 .active（display:block），
-   它的 .detail-back（position:fixed; z-index:900）是真渲染出来的，
-   只靠 z-index 压制。桌面/Chrome 守规矩，但 **iOS Safari 对多层
-   position:fixed 的 z-index 处理不可靠**，于是详情页的返回键穿层浮到
-   阅读器之上 —— 表现为「两个回退键，其中大的那个点不动」。
-
-   为什么「继续阅读」不复现：那条路径不经过详情页，#page-detail 不是
-   .active（display:none），.detail-back 压根不可见。
-
-   解法：让 reader-mode 真正生效 —— 直接把下层页面与全局浮层藏掉，
-   不再依赖 z-index 的层叠行为。
-   注意 #reader 与 .page 是兄弟节点（都在 body 下），所以这里不会误伤阅读器。
-   ══════════════════════════════════════════════════════════════════════ */
 body.reader-mode .page,
 body.reader-mode .header-container,
 body.reader-mode .bottom-nav,
@@ -437,9 +382,6 @@ body.reader-mode .ambient-bg {
   display: none !important;
 }
 
-/* ══════════════════════════════════════════════════════════════════════
-   批注 / 笔记（EPUB 阅读器）
-   ══════════════════════════════════════════════════════════════════════ */
 #epubBtnAnnot { position: relative; }
 .annot-badge {
   position: absolute; top: -5px; right: -5px;
@@ -518,7 +460,6 @@ body.reader-mode .ambient-bg {
 }
 .annot-act.ghost:hover { background: rgba(255,92,92,0.26); }
 
-/* ── AI 章节总结面板 ── */
 .epub-summary { flex: 1; overflow-y: auto; padding: 12px 13px 20px; }
 .sum-loading { color: #7a7a86; font-size: 13px; padding: 18px 4px; }
 .sum-head {
@@ -553,4 +494,3 @@ body.reader-mode .ambient-bg {
   padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.06);
 }
 #epubBtnSum { font-size: 11px; font-weight: 700; letter-spacing: .5px; }
-

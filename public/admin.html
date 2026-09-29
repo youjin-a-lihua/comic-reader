@@ -121,8 +121,9 @@ body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%,
   </label>
 </div>
 <div class="form-row">
-  <input type="text" id="decryptPassword" placeholder="加密密码（留空则不自动解密）" autocomplete="off">
+  <input type="password" id="decryptPassword" placeholder="加密密码" autocomplete="new-password">
   <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+  <button class="btn btn-ghost" id="clearPwdBtn" onclick="clearDecrypt()" style="display:none">清除口令</button>
 </div>
 <div class="msg" id="decryptMsg"></div>
 </div>
@@ -211,7 +212,9 @@ async function loadSettings(){
  try{
   var r=await api('/api/admin/settings'); var s=await r.json();
   document.getElementById('autoDecrypt').checked = !!s.autoDecrypt;
-  document.getElementById('decryptPassword').value = s.decryptPassword || '';
+  document.getElementById('decryptPassword').value = '';
+  document.getElementById('decryptPassword').placeholder = s.hasDecryptPassword ? '已配置（留空则保持不变）' : '未配置（留空则不自动解密）';
+  document.getElementById('clearPwdBtn').style.display = s.hasDecryptPassword ? '' : 'none';
   document.getElementById('allowDeleteComic').checked = !!s.allowDeleteComic;
  }catch(e){}
 }
@@ -219,13 +222,24 @@ async function saveSettings(){
  var autoDecrypt=document.getElementById('autoDecrypt').checked;
  var decryptPassword=document.getElementById('decryptPassword').value;
  var allowDeleteComic=document.getElementById('allowDeleteComic').checked;
+ var body={autoDecrypt:autoDecrypt,allowDeleteComic:allowDeleteComic};
+ if(decryptPassword) body.decryptPassword=decryptPassword;
  try{
-  var r=await api('/api/admin/settings',{method:'POST',body:{autoDecrypt:autoDecrypt,decryptPassword:decryptPassword,allowDeleteComic:allowDeleteComic}});
+  var r=await api('/api/admin/settings',{method:'POST',body:body});
   var d=await r.json();
   if(r.ok){ showMsg('decryptMsg', autoDecrypt?'已开启自动解密，正在后台解密加密漫画':'已关闭自动解密',0);
-           showMsg('deleteMsg', allowDeleteComic?'已开启一键删除漫画（长按漫画或进详情即可删除）':'已关闭一键删除漫画',0); }
+           showMsg('deleteMsg', allowDeleteComic?'已开启一键删除漫画（长按漫画或进详情即可删除）':'已关闭一键删除漫画',0);
+           loadSettings(); }
   else showMsg('decryptMsg', d.error, 1);
  }catch(e){ showMsg('decryptMsg','保存失败',1); }
+}
+async function clearDecrypt(){
+ if(!confirm('清除已保存的加密密码？清除后不再自动解密，直到重新填写。')) return;
+ try{
+  var r=await api('/api/admin/settings',{method:'POST',body:{clearDecryptPassword:true}});
+  if(r.ok){ showMsg('decryptMsg','已清除加密密码',0); loadSettings(); }
+  else{ var d=await r.json(); showMsg('decryptMsg', d.error, 1); }
+ }catch(e){ showMsg('decryptMsg','清除失败',1); }
 }
 
 function showMsg(id,text,err){ var el=document.getElementById(id); el.textContent=text; el.className='msg '+(err?'msg-error':'msg-ok'); }

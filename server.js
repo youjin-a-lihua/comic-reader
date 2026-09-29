@@ -710,8 +710,18 @@ app.delete('/api/admin/libraries/:id', authMiddleware, adminOnly, async (req, re
   res.json({ success: true });
 });
 
+// The decrypt password is never sent back to the browser; the client only learns whether one is set.
+function publicSettings() {
+  const s = getSettings();
+  return {
+    autoDecrypt: !!s.autoDecrypt,
+    allowDeleteComic: !!s.allowDeleteComic,
+    hasDecryptPassword: !!s.decryptPassword,
+  };
+}
+
 app.get('/api/admin/settings', authMiddleware, adminOnly, async (req, res) => {
-  res.json(getSettings());
+  res.json(publicSettings());
 });
 
 app.post('/api/admin/settings', authMiddleware, adminOnly, async (req, res) => {
@@ -721,11 +731,15 @@ app.post('/api/admin/settings', authMiddleware, adminOnly, async (req, res) => {
       .then(s => console.log(`[autodecrypt] 手动触发 扫描=${s.scanned} 解密=${s.decrypted} 失败=${s.failed}`))
       .catch(e => console.error('[autodecrypt] 手动触发失败:', e.message));
   }
+  const auditDetail = Object.assign({}, req.body || {});
+  if ('decryptPassword' in auditDetail) {
+    auditDetail.decryptPassword = auditDetail.decryptPassword ? '***' : '';
+  }
   audit.record({
     user: req.user.username, ip: audit.clientIp(req), action: 'update-settings',
-    detail: JSON.stringify(req.body || {}).slice(0, 300), result: 'ok',
+    detail: JSON.stringify(auditDetail).slice(0, 300), result: 'ok',
   });
-  res.json({ success: true, settings: updated });
+  res.json({ success: true, settings: publicSettings() });
 });
 
 app.get('/api/library', authMiddleware, async (req, res) => {

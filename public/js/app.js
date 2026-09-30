@@ -2497,7 +2497,7 @@ function closeReaderFast() {
       if (ctx) ctx.clearRect(0, 0, 1, 1);
     });
 
-    // ★ 关键：复用 reader.js 的核心 closeReader，完成
+    // 复用 reader.js 的核心 closeReader，完成
     //   pdfDoc.destroy() + readerState 重置 + 进度保存 + 路由修正 + 回详情/书架。
     //   早期实现只做视觉隐藏，状态常驻 → 下一本复用上一本的 PDF 文档（「看完一本看不了下一本」）。
     //   注意：app.js 先于 reader.js 加载，故此处运行时通过 window.__coreCloseReader 取。

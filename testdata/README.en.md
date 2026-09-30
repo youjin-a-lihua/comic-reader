@@ -20,7 +20,7 @@ library or a handful of fake images counts as acceptance.
 
 1. Drop both files into any **novel** library directory (the one with `type: novel` in `libraries.json`).
 2. Trigger a scan (restart the service or hit the rescan), and confirm both appear in the **novels** section.
-   - ⚠️ Key regression: a **PDF in the novel library must be classified as `novel`**, not sniffed to `comic` from its extension. This depends on `lib/scanner.js` passing the sidecar `type` through and `server.js` preferring `metaType`.
+   - **Key regression**: a **PDF in the novel library must be classified as `novel`**, not sniffed to `comic` from its extension. This depends on `lib/scanner.js` passing the sidecar `type` through and `server.js` preferring `metaType`.
 3. Open the EPUB:
    - the contents should have **18 entries** (cover + chapters) and **15 chapters**
    - any chapter should render as normal Simplified Chinese, with **no split radicals or substituted characters** such as `讠正` / `氵台` / `纳人`

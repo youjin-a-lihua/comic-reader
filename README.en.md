@@ -142,6 +142,15 @@ Requires Node.js ≥ 20. `sharp` installs from a prebuilt binary, so no local to
 
 ## Changelog
 
+### v1.4.5 (2026-09-30)
+
+**UI**
+- Every emoji in the interface is now an inline SVG icon: a 34-symbol set plus an `ico()` helper, both defined inside `index.html` (no new files, no external dependency). 100 replacements across `app.js`, `reader.js`, `index.html` and `login.html`
+- Buttons that used a bare glyph as an icon (`↕` `↔` `⇄` `⇦` `⊟`) joined the same set; typographic arrows (`→` `←`) were left alone
+- Icons are `1em` and use `currentColor`, so they follow the surrounding font size and colour with no layout change
+- Dropped the decorative `──` / `═══` comment banners in `app.js` (19 lines)
+- Asset version `?v=20260924d` to `?v=20260930` so clients pick up the new files
+
 ### v1.4.4 (2026-09-30)
 
 **Docs**

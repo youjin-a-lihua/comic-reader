@@ -16,6 +16,12 @@
   .profile-cover { width: 80px; min-width: 80px; aspect-ratio: 3/4; border-radius: 8px; overflow: hidden; background: #222; }
   .profile-info { flex: 1; min-width: 0; }
   .filter-chips-track { display: flex; gap: 8px; overflow-x: auto; padding: 8px 12px; }
+  /* Icons are drawn inline so they inherit text colour and size: 1em keeps the layout
+     identical to the emoji they replaced. */
+  .ico { width: 1em; height: 1em; flex: none; vertical-align: -0.14em; fill: none;
+         stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .ico-xl { width: 1.6em; height: 1.6em; stroke-width: 1.5; }
+  .ico-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
   .filter-chip { flex: 0 0 auto; padding: 6px 14px; border-radius: 999px; background: #222; color: #eee; border: none; font-size: 13px; cursor: pointer; }
   .filter-chip.active { background: var(--accent, #ff6b35); color: #fff; }
   .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 16px; backdrop-filter: blur(2px); }
@@ -51,11 +57,53 @@
   .jm-detail-meta { font-size: 13px; line-height: 1.7; color: var(--text,#eee); }
   .jm-detail-line { white-space: pre-wrap; word-break: break-word; }
 </style>
-  <link rel="stylesheet" href="/css/fnos-theme.css?v=20260924d">
-  <link rel="stylesheet" href="/css/reader.css?v=20260924d">
-  <link rel="stylesheet" href="/css/detail.css?v=20260924d">
+  <link rel="stylesheet" href="/css/fnos-theme.css?v=20260930">
+  <link rel="stylesheet" href="/css/reader.css?v=20260930">
+  <link rel="stylesheet" href="/css/detail.css?v=20260930">
 </head>
 <body data-layout="spatial" data-theme="dark">
+<svg class="ico-sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="M20 20l-4.3-4.3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.2 6.2l11.6 11.6M17.8 6.2L6.2 17.8"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.6v11.4M7.2 10.6L12 15.4l4.8-4.8M4.5 20h15"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.6C10.4 5.2 8.6 4.6 6.2 4.6H4v13.2h2.2c2.4 0 4.2.6 5.8 2 1.6-1.4 3.4-2 5.8-2H20V4.6h-2.2c-2.4 0-4.2.6-5.8 2z"/><path d="M12 6.6v13.2"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.4l2.65 5.4 5.95.87-4.3 4.2 1.02 5.93L12 17.02l-5.32 2.78 1.02-5.93-4.3-4.2 5.95-.87z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-star-o" viewBox="0 0 24 24"><path d="M12 3.4l2.65 5.4 5.95.87-4.3 4.2 1.02 5.93L12 17.02l-5.32 2.78 1.02-5.93-4.3-4.2 5.95-.87z"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.2S4.4 15.6 4.4 10.6A4.6 4.6 0 0 1 12 7.3a4.6 4.6 0 0 1 7.6 3.3c0 5-7.6 9.6-7.6 9.6z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-heart-o" viewBox="0 0 24 24"><path d="M12 20.2S4.4 15.6 4.4 10.6A4.6 4.6 0 0 1 12 7.3a4.6 4.6 0 0 1 7.6 3.3c0 5-7.6 9.6-7.6 9.6z"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M4.5 19.5h3.2L19 8.2l-3.2-3.2L4.5 16.3z"/><path d="M14.6 6.9l2.5 2.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.8h5V7M6.6 7l1 12.4h8.8L17.4 7"/><path d="M10.4 10.8v5.6M13.6 10.8v5.6"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-page" viewBox="0 0 24 24"><path d="M6.5 3.2h7.2l4 4v13.6H6.5z"/><path d="M13.7 3.2v4h4"/><path d="M9.4 12.4h5.2M9.4 16h5.2"/></symbol>
+  <symbol id="i-flow" viewBox="0 0 24 24"><path d="M4.5 7h15M4.5 12h11M4.5 17h7"/></symbol>
+  <symbol id="i-pages" viewBox="0 0 24 24"><rect x="3.5" y="5" width="7.5" height="14" rx="1.6"/><rect x="13" y="5" width="7.5" height="14" rx="1.6"/></symbol>
+  <symbol id="i-contrast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 3.6a8.4 8.4 0 0 1 0 16.8z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.2 14.6A8.6 8.6 0 0 1 9.4 3.8 8.6 8.6 0 1 0 20.2 14.6z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.8 4.8l1.6 1.6M17.6 17.6l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.8 19.2l1.6-1.6M17.6 6.4l1.6-1.6"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 5.5L8.5 12l6.5 6.5"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 5.5L15.5 12 9 18.5"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.8l4.2 4.2L19 7.2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.2v13.6M5.2 12h13.6"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M8.2 12.4l2.7 2.7 5-5.2"/></symbol>
+  <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.8l8.6 15H3.4z"/><path d="M12 9.6v4.6M12 17.4v.1"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><rect x="5" y="4.5" width="14" height="16" rx="2.5"/><path d="M9.5 4.5V3.2h5v1.3"/><path d="M9 10h6M9 14h6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 6.2 12 6.2 21.5 12 21.5 12 18 17.8 12 17.8 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.7"/></symbol>
+  <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M3.5 9.5h17M9.5 9.5v11"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8.5" cy="15" r="3.8"/><path d="M11.2 12.3l7.3-7.3M16.2 5.2l2.6 2.6M13.8 7.6l2.6 2.6"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24"><path d="M12 4.2v15.3M7.5 19.5h9M5 7.8h14"/><path d="M5 7.8l-2.2 4.6h4.4z"/><path d="M19 7.8l-2.2 4.6h4.4z"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M12 3.5a5.8 5.8 0 0 0-3.3 10.5V16h6.6v-2a5.8 5.8 0 0 0-3.3-10.5z"/><path d="M9.8 19h4.4"/></symbol>
+  <symbol id="i-v-arrows" viewBox="0 0 24 24"><path d="M12 4.5v15M8.5 8l3.5-3.5L15.5 8M8.5 16l3.5 3.5 3.5-3.5"/></symbol>
+  <symbol id="i-h-arrows" viewBox="0 0 24 24"><path d="M4.5 12h15M8 8.5L4.5 12 8 15.5M16 8.5l3.5 3.5L16 15.5"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4.5 8.5h12M13 5l3.5 3.5L13 12"/><path d="M19.5 15.5h-12M11 12l-3.5 3.5L11 19"/></symbol>
+</svg>
+<script>
+  function ico(name, cls) {
+    return '<svg class="ico' + (cls ? ' ' + cls : '') + '" aria-hidden="true">'
+      + '<use href="#i-' + name + '"></use></svg>';
+  }
+</script>
 
   <div class="ambient-bg">
     <div id="ambientAura" class="ambient-aura"></div>
@@ -168,11 +216,11 @@
     <div class="page-content">
       <div class="search-bar">
         <input id="searchInput" class="search-input" type="text" placeholder="搜索漫画、小说、作者或标签" autocomplete="off" oninput="onSearch()">
-        <button id="searchClear" class="search-clear" onclick="clearSearch()" style="display:none" aria-label="清除">✕</button>
+        <button id="searchClear" class="search-clear" onclick="clearSearch()" style="display:none" aria-label="清除"><svg class="ico" aria-hidden="true"><use href="#i-x"></use></svg></button>
       </div>
       <div class="search-actions">
-        <button class="action-btn" onclick="openLocalSearch()">🔍 查找本地</button>
-        <button class="action-btn accent" onclick="openJmDownload()">⬇️ 从JM下载</button>
+        <button class="action-btn" onclick="openLocalSearch()"><svg class="ico" aria-hidden="true"><use href="#i-search"></use></svg> 查找本地</button>
+        <button class="action-btn accent" onclick="openJmDownload()"><svg class="ico" aria-hidden="true"><use href="#i-download"></use></svg> 从JM下载</button>
       </div>
       <div id="searchInitial" class="search-initial">
         <div id="recentSearches" class="recent-searches"></div>
@@ -190,10 +238,10 @@
       <div class="search-bar">
         <input id="onlineSearchInput" class="search-input" type="text" placeholder="搜索禁漫天堂（标题 / 作者）" autocomplete="off"
           oninput="onOnlineSearchInput()" onkeydown="if(event.key==='Enter')onlineSearch(1)">
-        <button id="onlineSearchClear" class="search-clear" onclick="clearOnlineSearch()" style="display:none" aria-label="清除">✕</button>
+        <button id="onlineSearchClear" class="search-clear" onclick="clearOnlineSearch()" style="display:none" aria-label="清除"><svg class="ico" aria-hidden="true"><use href="#i-x"></use></svg></button>
       </div>
       <div class="search-actions">
-        <button class="action-btn accent" onclick="onlineSearch(1)">🔍 在线搜索</button>
+        <button class="action-btn accent" onclick="onlineSearch(1)"><svg class="ico" aria-hidden="true"><use href="#i-search"></use></svg> 在线搜索</button>
         <select id="onlineSourceSelect" class="source-select" style="display:none" onchange="onOnlineSourceChange()"></select>
       </div>
       <div id="onlineInitial" class="search-initial">
@@ -269,8 +317,8 @@
   <div id="selBar" style="display:none;position:fixed;left:16px;right:16px;bottom:calc(24px + env(safe-area-inset-bottom));z-index:900;align-items:center;gap:10px;padding:12px 14px;border-radius:16px;background:rgba(28,28,32,0.92);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);border:1px solid rgba(255,255,255,0.1);box-shadow:0 12px 36px rgba(0,0,0,0.5)">
     <span style="flex:1;font-size:13.5px;color:rgba(255,255,255,0.75)">已选 <b id="selCount" style="color:#fff">0</b> 本</span>
     <button onclick="exitSelMode()" style="padding:9px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.75);font-size:13.5px;cursor:pointer">取消</button>
-    <button onclick="openQueuePanel()" style="padding:9px 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.8);font-size:13.5px;cursor:pointer">📋 清单</button>
-    <button onclick="downloadQueue()" style="padding:9px 16px;border-radius:10px;border:none;background:#0A84FF;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer">⬇️ 下载</button>
+    <button onclick="openQueuePanel()" style="padding:9px 13px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:rgba(255,255,255,0.8);font-size:13.5px;cursor:pointer"><svg class="ico" aria-hidden="true"><use href="#i-list"></use></svg> 清单</button>
+    <button onclick="downloadQueue()" style="padding:9px 16px;border-radius:10px;border:none;background:#0A84FF;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer"><svg class="ico" aria-hidden="true"><use href="#i-download"></use></svg> 下载</button>
   </div>
 
   <div id="queueModal" class="modal-mask" style="display:none" onclick="if(event.target===this)closeQueuePanel()">
@@ -281,14 +329,14 @@
       <div class="modal-actions">
         <button class="modal-btn ghost" onclick="closeQueuePanel()">关闭</button>
         <button class="modal-btn ghost" onclick="clearQueue()">清空</button>
-        <button class="modal-btn accent" onclick="downloadQueue()">⬇️ 全部下载</button>
+        <button class="modal-btn accent" onclick="downloadQueue()"><svg class="ico" aria-hidden="true"><use href="#i-download"></use></svg> 全部下载</button>
       </div>
     </div>
   </div>
 
-  <script src="/js/api.js?v=20260924d"></script>
-  <script src="/js/app.js?v=20260924d"></script>
-  <script src="/js/reader.js?v=20260924d"></script>
+  <script src="/js/api.js?v=20260930"></script>
+  <script src="/js/app.js?v=20260930"></script>
+  <script src="/js/reader.js?v=20260930"></script>
   <script>document.addEventListener('DOMContentLoaded', () => { initApp(); });</script>
 </body>
 </html>

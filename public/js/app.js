@@ -259,7 +259,7 @@ function renderContinueCard(comic) {
     <div class="continue-card" onclick="openReaderById('${comic.id}')">
       <div class="continue-cover">
         <img src="${coverUrl}" alt="" loading="lazy" decoding="async" 
-          onerror="this.parentElement.innerHTML='<span class=placeholder>📖</span>'"
+          onerror="this.parentElement.innerHTML='<span class=placeholder>' + ico('book') + '</span>'"
           ${getToken() ? `onload="this.setAttribute('data-loaded','1')"` : ''}>
       </div>
       <div class="continue-info">
@@ -284,15 +284,15 @@ function renderComicCard(comic, delay = 0) {
     onclick="openComicById('${comic.id}')"
     oncontextmenu="event.preventDefault();showComicMenu(event,'${comic.id}')">
     <div class="manga-cover-wrap">
-      ${coverUrl ? `<img src="${coverUrl}" class="manga-cover" alt="" loading="lazy" decoding="async" onerror="this.parentElement.innerHTML='<div class=placeholder-cover>📖</div>'">`
+      ${coverUrl ? `<img src="${coverUrl}" class="manga-cover" alt="" loading="lazy" decoding="async" onerror="this.parentElement.innerHTML='<div class=placeholder-cover>' + ico('book') + '</div>'">`
         : `<div class="placeholder-cover">${escHtml(comic.name.slice(0, 2))}</div>`}
       ${progressPct > 0 ? `<div class="progress-indicator"><div class="fill" style="width:${progressPct}%"></div></div>` : ''}
-      ${comic.bookmarked ? '<div class="badge-bookmark">★</div>' : ''}
+      ${comic.bookmarked ? '<div class="badge-bookmark">' + ico('star', 'fill') + '</div>' : ''}
       ${comic.isTranslated ? '<div class="badge-translated">译</div>' : ''}
     </div>
     <div class="manga-meta-wrapper">
       <div class="title">${escHtml(title)}</div>
-      ${titleAuthor ? `<div class="author">✎ ${escHtml(titleAuthor)}</div>` : ''}
+      ${titleAuthor ? `<div class="author">${ico('pen')} ${escHtml(titleAuthor)}</div>` : ''}
     </div>
   </div>`;
 }
@@ -310,11 +310,11 @@ function showComicMenu(event, comicId) {
   menu.innerHTML = `
     <div class="context-menu-content">
       <div class="menu-title">${escHtml(comic.name.slice(0, 20))}</div>
-      <div onclick="toggleBookmarkComic('${comicId}')">${comic.bookmarked ? '★ 取消收藏' : '☆ 加入收藏'}</div>
-      <div onclick="openReaderById('${comicId}')">📖 开始阅读</div>
+      <div onclick="toggleBookmarkComic('${comicId}')">${comic.bookmarked ? ico('star', 'fill') + ' 取消收藏' : ico('star-o') + ' 加入收藏'}</div>
+      <div onclick="openReaderById('${comicId}')">${ico('book')} 开始阅读</div>
       ${shelfOpts ? '<hr>' + shelfOpts : ''}
       <div onclick="showCreateShelf('${comicId}')">+ 新建书架并加入</div>
-      ${canDeleteComic ? '<hr><div style="color:#ff453a;font-weight:500" onclick="deleteComic(\'' + comicId + '\')">🗑 删除漫画（不可恢复）</div>' : ''}
+      ${canDeleteComic ? '<hr><div style="color:#ff453a;font-weight:500" onclick="deleteComic(\'' + comicId + '\')">' + ico('trash') + ' 删除漫画（不可恢复）</div>' : ''}
       <hr><div onclick="this.parentElement.parentElement.remove()">取消</div>
     </div>
   `;
@@ -370,7 +370,7 @@ function buildFilterBar(comics) {
   if (countEl) countEl.textContent = allTags.length;
   let html = '<button class="filter-chip active" onclick="clearFilters()">全部</button>';
   allTags.forEach((t) => {
-    html += `<button class="filter-chip" data-tag="${escHtml(t.name)}" onclick="toggleFilter('${escHtml(t.name).replace(/'/g, "\\'")}')">${t.type === 'author' ? '✎ ' : ''}${escHtml(t.name)}<span class="count">${t.count}</span></button>`;
+    html += `<button class="filter-chip" data-tag="${escHtml(t.name)}" onclick="toggleFilter('${escHtml(t.name).replace(/'/g, "\\'")}')">${t.type === 'author' ? ico('pen') + ' ' : ''}${escHtml(t.name)}<span class="count">${t.count}</span></button>`;
   });
   chips.innerHTML = html;
 }
@@ -415,7 +415,7 @@ function renderAllGrid() {
   renderGrid('allGrid', 'continueAll', [{ name: '', count: filtered.length, items: filtered }]);
 }
 
-// ── 最近添加 ──
+// 最近添加
 function showRecentSection(items, label) {
   const pageAll = document.getElementById('page-all');
   if (!pageAll) return;
@@ -434,7 +434,7 @@ function showRecentSection(items, label) {
   setTimeout(loadPdfCovers, 300);
 }
 
-// ── 排行榜 ──
+// 排行榜
 let rankData = null;
 let rankMode = 'weekly';
 
@@ -461,22 +461,22 @@ function renderRanking() {
   el.innerHTML = list.map((item, i) => `
     <div class="rank-item" onclick="openComicById('${item.id}')">
       <div class="rank-num ${i < 3 ? 'top' + (i + 1) : ''}">${i + 1}</div>
-      <div class="rank-cover"><img src="${ComicAPI.getCoverUrl(item.id)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><rect fill=%22%23333%22 width=%2248%22 height=%2248%22/><text fill=%22%23888%22 x=%2224%22 y=%2228%22 text-anchor=%22middle%22 font-size=%2214%22>📖</text></svg>'"></div>
+      <div class="rank-cover"><img src="${ComicAPI.getCoverUrl(item.id)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><rect fill=%22%23333%22 width=%2248%22 height=%2248%22/><path fill=%22none%22 stroke=%22%23888%22 stroke-width=%221.8%22 stroke-linejoin=%22round%22 d=%22M24 19c-2-1.5-4-2-6-2h-2v14h2c2 0 4 .5 6 2 2-1.5 4-2 6-2h2V17h-2c-2 0-4 .5-6 2zM24 19v14%22/></svg>'"></div>
       <div class="rank-info">
         <div class="rank-title">${escHtml(item.name.slice(0, 35))}</div>
-        <div class="rank-meta">❤️ ${item.likes || 0} · 👁 ${item.views || 0}</div>
+        <div class="rank-meta">${ico('heart', 'fill')} ${item.likes || 0} · ${ico('eye')} ${item.views || 0}</div>
       </div>
     </div>`).join('');
 }
 
-// ── 爱心（在阅读器调用）──
+// 爱心（在阅读器调用）
 async function toggleLikeFromReader(comicId) {
   try {
     await fetch(`/api/comic/${comicId}/like`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` } });
   } catch {}
 }
 
-// ── 搜索 ──
+// 搜索
 let searchTimer = null;
 let recentSearches = JSON.parse(localStorage.getItem('fn_recent_searches') || '[]');
 
@@ -535,7 +535,7 @@ async function performSearch(q) {
   }
 }
 
-// ── 自定义书架 ──
+// 自定义书架
 async function loadShelves() {
   try {
     userShelves = await ComicAPI.getShelves();
@@ -552,7 +552,7 @@ function renderShelvesPanel() {
   }
   el.innerHTML = userShelves.map(s => `
     <div class="shelf-item" onclick="openShelf('${s.id}')">
-      <div class="shelf-previews">${(s.previews || []).map(p => `<div class="shelf-preview-cover">${p.hasCover ? `<img src="${ComicAPI.getCoverUrl(p.id)}" alt="">` : '📖'}</div>`).join('')}</div>
+      <div class="shelf-previews">${(s.previews || []).map(p => `<div class="shelf-preview-cover">${p.hasCover ? `<img src="${ComicAPI.getCoverUrl(p.id)}" alt="">` : ico('book')}</div>`).join('')}</div>
       <div class="shelf-name">${escHtml(s.name)}</div>
       <div class="shelf-count">${s.itemCount} 本</div>
     </div>
@@ -588,16 +588,16 @@ async function openShelf(id) {
   } catch {}
 }
 
-// ── 收藏切换 ──
+// 收藏切换
 async function toggleBookmarkComic(id) {
   await ComicAPI.toggleBookmark(id);
   await loadAllData();
 }
 
-// ── 打开漫画 ──
+// 打开漫画
 // 点开漫画 → 进入详情/系列枢纽页（而非直接进阅读器），
 // 形成「书架 → 详情 → 阅读器」的自然返回栈。
-// ── FLIP 共享元素状态 ──
+// FLIP 共享元素状态
 let flipSourceCard = null;
 
 function openComicById(id, triggerEl) {
@@ -776,11 +776,11 @@ function renderDetail(comic) {
   const tags = (comic.tags || []).map(t => `<span class="detail-tag">${escHtml(t)}</span>`).join('');
 
   let html = `
-    <button class="detail-back" onclick="showDetailBack()" aria-label="返回">←</button>
+    <button class="detail-back" onclick="showDetailBack()" aria-label="返回">${ico('arrow-left')}</button>
     <div class="detail-hero">
       <div class="detail-cover">
         <img src="${coverUrl}" alt="" loading="lazy" decoding="async"
-          onerror="this.parentElement.innerHTML='<div class=placeholder-cover>📖</div>'">
+          onerror="this.parentElement.innerHTML='<div class=placeholder-cover>' + ico('book') + '</div>'">
       </div>
       <div class="detail-meta-col">
         <div class="detail-title">${escHtml(comic.name)}</div>
@@ -788,7 +788,7 @@ function renderDetail(comic) {
         ${ext ? `<div class="detail-sub">格式：${ext}</div>` : ''}
         ${tags ? `<div class="detail-tags">${tags}</div>` : ''}
         <button class="detail-start" onclick="openReaderById('${comic.id}')">${startLabel}</button>
-        ${canDeleteComic ? `<button class="detail-start" style="background:rgba(255,69,58,0.12);color:#ff453a;margin-top:10px" onclick="deleteComic('${comic.id}')">🗑 删除漫画（不可恢复）</button>` : ''}
+        ${canDeleteComic ? `<button class="detail-start" style="background:rgba(255,69,58,0.12);color:#ff453a;margin-top:10px" onclick="deleteComic('${comic.id}')">${ico('trash')} 删除漫画（不可恢复）</button>` : ''}
       </div>
     </div>`;
 
@@ -809,7 +809,7 @@ function renderDetail(comic) {
         <div class="volume-item ${isActive ? 'active' : ''}" onclick="openReaderById('${vol.id}')">
           <div class="volume-thumb">
             <img src="${ComicAPI.getCoverUrl(vol.id)}" alt="" loading="lazy" decoding="async"
-              onerror="this.parentElement.innerHTML='<div class=placeholder-cover>📖</div>'">
+              onerror="this.parentElement.innerHTML='<div class=placeholder-cover>' + ico('book') + '</div>'">
           </div>
           <div class="volume-info">
             <div class="volume-name">${escHtml(vol.name)}</div>
@@ -871,7 +871,7 @@ window.fnComicBack = function () {
 
 function loadLibraryData() { loadAllData(); } // reader 回调
 
-// ── 标签云（漫画页顶部快速筛选，可折叠区块头） ──
+// 标签云（漫画页顶部快速筛选，可折叠区块头）
 function renderTagCloud() {
   const cloud = document.getElementById('filterChips');
   if (!cloud) return;
@@ -1264,12 +1264,12 @@ async function sendJmCommand() {
     const res = await ComicAPI.sendAstrbotCommand({ command });
     if (r) r.style.display = 'block';
     if (res.status !== 'ok') {
-      if (r) { r.className = 'jm-result err'; r.textContent = '⚠️ ' + (res.message || '发送失败') + '（可改用“复制指令”手动发送）'; }
+      if (r) { r.className = 'jm-result err'; r.innerHTML = ico('alert') + ' ' + escHtml(String(res.message || '发送失败')) + '（可改用“复制指令”手动发送）'; }
       toast(res.message || '发送失败');
       return;
     }
     if (!res.sessionId) {
-      if (r) { r.className = 'jm-result ok'; r.innerHTML = '✅ 已发送：<b>' + escHtml(res.command) + '</b>' + (res.reply ? '<br>Bot：' + escHtml(res.reply).replace(/\n/g, '<br>') : ''); }
+      if (r) { r.className = 'jm-result ok'; r.innerHTML = ico('check-circle') + ' 已发送：<b>' + escHtml(res.command) + '</b>' + (res.reply ? '<br>Bot：' + escHtml(res.reply).replace(/\n/g, '<br>') : ''); }
       return;
     }
     jmPollSid = res.sessionId;
@@ -1277,7 +1277,7 @@ async function sendJmCommand() {
     await pollJmSession(ingest);
     jmPollTimer = setInterval(() => pollJmSession(ingest), 1500);
   } catch (e) {
-    if (r) { r.style.display = 'block'; r.className = 'jm-result err'; r.textContent = '⚠️ 网络错误：' + e; }
+    if (r) { r.style.display = 'block'; r.className = 'jm-result err'; r.innerHTML = ico('alert') + ' 网络错误：' + escHtml(String(e)); }
     toast('网络错误');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '发送指令'; }
@@ -1320,7 +1320,7 @@ function renderJmSession(messages, ingest) {
     if (m) pct = Math.max(...m.map(x => parseInt(x)));
     const done = /(完成|入库|已下载|下载成功|成功收编|已入库|已加入)/.test(allText);
     let html = '<div class="jm-progress"><div class="jm-progress-bar" style="width:' + pct + '%"></div></div>';
-    html += '<div class="jm-progress-label">' + (done ? '✅ 完成' + (ingest ? '，刷新书架即可看到' : '') : (pct > 0 ? ('下载中 ' + pct + '%') : '任务已提交，等待 Bot 响应…')) + '</div>';
+    html += '<div class="jm-progress-label">' + (done ? ico('check-circle') + ' 完成' + (ingest ? '，刷新书架即可看到' : '') : (pct > 0 ? ('下载中 ' + pct + '%') : '任务已提交，等待 Bot 响应…')) + '</div>';
     html += '<div class="jm-log">';
     for (const t of botTexts) html += '<div>' + escHtml(t).replace(/\n/g, '<br>') + '</div>';
     html += '</div>';
@@ -1420,7 +1420,7 @@ function renderProfileContent(container, bookmarks, recent, downloads) {
     html += bookmarks.map((c, i) => renderComicCard({ ...c, progress: c.progress || null, bookmarked: true }, i * 0.03)).join('');
     html += '</div>';
   } else {
-    html += '<div class="empty-state"><p>还没有收藏</p><p class="hint">阅读时长按漫画或点 ★ 即可收藏</p></div>';
+    html += '<div class="empty-state"><p>还没有收藏</p><p class="hint">阅读时长按漫画或点 ' + ico('star', 'fill') + ' 即可收藏</p></div>';
   }
 
   const watching = recent.filter(c => c.progress && c.progress.page > 0);
@@ -1434,7 +1434,7 @@ function renderProfileContent(container, bookmarks, recent, downloads) {
       const authorStr = (c.authors || []).slice(0, 1).join('、');
       return `<div class="profile-item" onclick="openReaderById('${c.id}')">
         <div class="profile-cover">
-          <img src="${coverUrl}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.innerHTML='<span class=placeholder>📖</span>'">
+          <img src="${coverUrl}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.innerHTML='<span class=placeholder>' + ico('book') + '</span>'">
         </div>
         <div class="profile-info">
           <div class="title">${escHtml(c.name)}</div>
@@ -1444,7 +1444,7 @@ function renderProfileContent(container, bookmarks, recent, downloads) {
           </div>
           <div class="profile-progress-bar"><div class="fill" style="width:${pct}%"></div></div>
         </div>
-        <span class="profile-arrow">→</span>
+        <span class="profile-arrow">${ico('chevron-right')}</span>
       </div>`;
     }).join('');
     html += '</div>';
@@ -1471,7 +1471,7 @@ function renderProfileContent(container, bookmarks, recent, downloads) {
     }).join('');
     html += '</div>';
   } else {
-    html += '<div class="empty-state"><p>还没有下载记录</p><p class="hint">在「在线」页找到漫画后，点 ⬇️ 下载到库</p></div>';
+    html += '<div class="empty-state"><p>还没有下载记录</p><p class="hint">在「在线」页找到漫画后，点 ' + ico('download') + ' 下载到库</p></div>';
   }
 
   html += `<div style="margin-top:32px;text-align:center"><button class="action-btn" onclick="logout()">退出登录</button></div>`;
@@ -1593,13 +1593,13 @@ function renderQueuePanel() {
   el.innerHTML = dlQueue.map(x => `<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;margin-bottom:6px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06)">
     ${x.cover
       ? `<img src="${escHtml(x.cover)}" alt="" loading="lazy" style="flex:none;width:38px;height:50px;object-fit:cover;border-radius:6px" onerror="this.style.display='none'">`
-      : `<div style="flex:none;width:38px;height:50px;border-radius:6px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:18px">📖</div>`}
+      : `<div style="flex:none;width:38px;height:50px;border-radius:6px;background:rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;font-size:18px">${ico('book')}</div>`}
     <div style="flex:1;min-width:0">
       <div style="font-size:13px;color:#fff;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(x.title || x.id)}</div>
       <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:3px">${escHtml(x.source || '')} · ID ${escHtml(x.id)}</div>
     </div>
     <button onclick="removeFromQueue('${escHtml(x.key)}')" aria-label="移除"
-      style="flex:none;width:28px;height:28px;border-radius:8px;border:none;background:rgba(255,69,58,0.14);color:#ff453a;font-size:13px;cursor:pointer">✕</button>
+      style="flex:none;width:28px;height:28px;border-radius:8px;border:none;background:rgba(255,69,58,0.14);color:#ff453a;font-size:13px;cursor:pointer">${ico('x')}</button>
   </div>`).join('');
 }
 
@@ -1671,7 +1671,7 @@ function loadPdfCovers() {
 function renderPdfCover(coverEl, comic) {
   if (!coverEl) return;
   if (coverEl.querySelector('img')) return;
-  coverEl.innerHTML = '<div class="placeholder-cover" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:30px;color:#555">📖</div>';
+  coverEl.innerHTML = '<div class="placeholder-cover" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:30px;color:#555">' + ico('book') + '</div>';
 }
 
 function logout() {
@@ -1745,7 +1745,7 @@ function renderGrid(gridId, continueId, series) {
             <img src="${coverUrl}" class="hero-cover-art" loading="lazy">
             <div class="hero-overlay">
               <h1 class="hero-title">${escHtml(meta.title)}</h1>
-              <p class="hero-sub">${authorStr ? `✎ ${escHtml(authorStr)} · ` : ''}读至 ${pct}%</p>
+              <p class="hero-sub">${authorStr ? ico('pen') + ' ' + escHtml(authorStr) + ' · ' : ''}读至 ${pct}%</p>
             </div>
           </div>`;
       } else {
@@ -1754,7 +1754,7 @@ function renderGrid(gridId, continueId, series) {
             <img src="${coverUrl}" class="hero-cover-art" loading="lazy">
             <div class="hero-info">
               <div class="hero-title">${escHtml(meta.title)}</div>
-              <div class="hero-sub">${authorStr ? `✎ ${escHtml(authorStr)}` : ''}</div>
+              <div class="hero-sub">${authorStr ? ico('pen') + ' ' + escHtml(authorStr) : ''}</div>
               <div>
                 <div class="hero-sub" style="margin-bottom:6px; font-size:12px;">读至 ${pct}%</div>
                 <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
@@ -1774,7 +1774,7 @@ function renderGrid(gridId, continueId, series) {
     return;
   }
 
-  // ── 窗口化渲染：同一时刻只保留有限卡片在 DOM，滚动到哪渲染到哪 ──
+  // 窗口化渲染：同一时刻只保留有限卡片在 DOM，滚动到哪渲染到哪
   // iOS Safari 单标签页内存预算极低，一次性把整库 577 张卡片塞进 DOM，
   // 会在切换标签时叠加第二个整库网格 → WebContent 被系统杀掉（"网页将重新载入"）。
   // 窗口化后 DOM 卡片数恒定（≈GRID_BATCH），对 Library 大小完全免疫。
@@ -1883,12 +1883,12 @@ function renderSingleMangaCard(comic, index = 0) {
        oncontextmenu="event.preventDefault();showComicMenu(event,'${comic.id}')">
     <div class="manga-cover-wrap">
       <img src="${coverUrl}" class="manga-cover" loading="lazy" decoding="async">
-      ${comic.bookmarked ? '<div class="badge-bookmark">★</div>' : ''}
+      ${comic.bookmarked ? '<div class="badge-bookmark">' + ico('star', 'fill') + '</div>' : ''}
       ${comic.isTranslated ? '<div class="badge-translated">译</div>' : ''}
     </div>
     <div class="manga-meta-wrapper">
       <div class="title">${escHtml(meta.title)}</div>
-      ${authorStr ? `<div class="author">✎ ${escHtml(authorStr)}</div>` : ''}
+      ${authorStr ? `<div class="author">${ico('pen')} ${escHtml(authorStr)}</div>` : ''}
     </div>
   </div>`;
 }
@@ -1972,7 +1972,7 @@ function renderComicGridByTag() {
   renderGrid('comicGrid', 'continueComic', series);
 }
 
-// ── 小说页标签云（可折叠，可筛选） ──
+// 小说页标签云（可折叠，可筛选）
 function renderNovelTagCloud() {
   const cloud = document.getElementById('filterChipsNovel');
   if (!cloud) return;
@@ -2030,7 +2030,7 @@ function renderNovelGridByTag() {
   renderGrid('novelGrid', 'continueNovel', [{ name: '', count: flat.length, items: flat }]);
 }
 
-// ── 在线模块（禁漫天堂：搜索 / 详情 / 在线阅读） ──
+// 在线模块（禁漫天堂：搜索 / 详情 / 在线阅读）
 let currentOnlinePage = 1;
 let currentOnlineKeyword = '';
 let currentOnlineMaxPage = 1;
@@ -2139,14 +2139,14 @@ function renderOnlineCard(c) {
   const _q = inQueue(c.id, src);
   return `<div class="manga-card" onclick="handleOnlineCardTap('${escHtml(c.id)}','${escHtml(src)}',this)" oncontextmenu="event.preventDefault();longPressQueue('${escHtml(c.id)}','${escHtml(src)}',this)">
     <div class="manga-cover-wrap">
-      <div class="vol-check" style="display:${_q ? 'flex' : 'none'};position:absolute;top:6px;right:6px;z-index:3;width:20px;height:20px;border-radius:50%;background:#0A84FF;color:#fff;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.4)">✓</div>
-      ${cover ? `<img src="${cover}" class="manga-cover" alt="" loading="lazy" decoding="async" onerror="this.parentElement.innerHTML='<div class=placeholder-cover>📖</div>'">`
+      <div class="vol-check" style="display:${_q ? 'flex' : 'none'};position:absolute;top:6px;right:6px;z-index:3;width:20px;height:20px;border-radius:50%;background:#0A84FF;color:#fff;align-items:center;justify-content:center;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,.4)">${ico('check')}</div>
+      ${cover ? `<img src="${cover}" class="manga-cover" alt="" loading="lazy" decoding="async" onerror="this.parentElement.innerHTML='<div class=placeholder-cover>' + ico('book') + '</div>'">`
         : `<div class="placeholder-cover">${escHtml(title.slice(0, 2))}</div>`}
       ${badge}
     </div>
     <div class="manga-meta-wrapper">
       <div class="title">${escHtml(title)}</div>
-      ${author ? `<div class="author">✎ ${escHtml(author)}</div>` : ''}
+      ${author ? `<div class="author">${ico('pen')} ${escHtml(author)}</div>` : ''}
     </div>
   </div>`;
 }
@@ -2184,26 +2184,26 @@ function renderOnlineDetail(a) {
       </div>
       <button style="flex:none;background:transparent;border:1px solid var(--border,#333);color:var(--muted,#aaa);border-radius:8px;padding:5px 9px;font-size:13px;line-height:1;cursor:pointer"
         title="下载本话到本地库"
-        onclick="event.stopPropagation();dlOnlineChapter('${escHtml(ch.id)}','${escHtml(ch.title).replace(/'/g, "\\'")}')">⬇️</button>
+        onclick="event.stopPropagation();dlOnlineChapter('${escHtml(ch.id)}','${escHtml(ch.title).replace(/'/g, "\\'")}')">${ico('download')}</button>
     </div>`).join('');
 
   let html = `
-    <button class="detail-back" onclick="showDetailBack()" aria-label="返回">←</button>
+    <button class="detail-back" onclick="showDetailBack()" aria-label="返回">${ico('arrow-left')}</button>
     <div class="detail-hero">
       <div class="detail-cover">
-        ${cover ? `<img src="${cover}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.innerHTML='<div class=placeholder-cover>📖</div>'">` : `<div class="placeholder-cover">📖</div>`}
+        ${cover ? `<img src="${cover}" alt="" loading="lazy" decoding="async" onerror="this.parentElement.innerHTML='<div class=placeholder-cover>' + ico('book') + '</div>'">` : `<div class="placeholder-cover">${ico('book')}</div>`}
       </div>
       <div class="detail-meta-col">
         <div class="detail-title">${escHtml(a.title)}</div>
         ${a.author ? `<div class="detail-sub">作者：${escHtml(a.author)}</div>` : ''}
-        ${a.likes ? `<div class="detail-sub">❤ ${a.likes}</div>` : ''}
+        ${a.likes ? `<div class="detail-sub">${ico('heart', 'fill')} ${a.likes}</div>` : ''}
         ${a.updateDate ? `<div class="detail-sub">更新：${escHtml(a.updateDate)}</div>` : ''}
         ${tagHtml ? `<div class="detail-tags">${tagHtml}</div>` : ''}
         <button class="detail-start" onclick="onlineOpenChapter('${escHtml(chapters[0] ? chapters[0].id : a.id)}','${escHtml(a.title).replace(/'/g, "\\'")}','${escHtml(chapters[0] ? chapters[0].title : '第1話').replace(/'/g, "\\'")}','${escHtml(a._source || '')}')">开始阅读</button>
         <button class="detail-start" style="background:rgba(255,255,255,0.08);color:var(--text,#eaeaea);margin-top:10px"
-          onclick="dlOnlineAlbum()">⬇️ 下载到库（${chapters.length} 话）</button>
+          onclick="dlOnlineAlbum()">${ico('download')} 下载到库（${chapters.length} 话）</button>
         <button class="detail-start" style="background:transparent;border:1px solid var(--border,#333);color:var(--muted,#aaa);margin-top:8px"
-          onclick="toggleQueue('${escHtml(a.id)}','${escHtml(a._source || '')}',this)">${inQueue(a.id, a._source) ? '✓ 已在下载清单' : '＋ 加入下载清单'}</button>
+          onclick="toggleQueue('${escHtml(a.id)}','${escHtml(a._source || '')}',this)">${inQueue(a.id, a._source) ? ico('check') + ' 已在下载清单' : ico('plus') + ' 加入下载清单'}</button>
       </div>
     </div>`;
   if (a.description) {
@@ -2242,7 +2242,7 @@ async function onlineOpenChapter(epId, title, chapterTitle, source) {
   }
 }
 
-// ═══ 在线章节 → 本地库（下载/入库）═══
+// 在线章节 → 本地库（下载/入库）
 // 在线阅读逐张走代理，慢且受源站可用性影响；下载入库后可走本地 PDF 通道高速阅读。
 let currentOnlineAlbum = null;
 let _dlJobId = null;
@@ -2314,7 +2314,7 @@ function pollDownload(jobId) {
     if (j.status === 'done') {
       stopDlPoll();
       if (_dlDoneResolve) { const _r = _dlDoneResolve; _dlDoneResolve = null; _r(); }
-      toast('✅ 已入库：' + (j.files || []).join('、'));
+      toast(ico('check-circle') + ' 已入库：' + (j.files || []).join('、'));
       loadAllData(true, currentTab);   // 强制刷新库，新书立刻可见
       setTimeout(dlModalHide, 2200);
     } else if (j.status === 'error') {
@@ -2331,7 +2331,7 @@ function stopDlPoll() {
   _dlJobId = null;
 }
 
-// ── 下载进度弹窗（动态创建，避免改动挂载的 index.html）──
+// 下载进度弹窗（动态创建，避免改动挂载的 index.html）
 function dlModalEnsure() {
   let m = document.getElementById('dlModal');
   if (m) return m;
@@ -2376,14 +2376,14 @@ function dlModalUpdate(j) {
 function dlModalError(msg) {
   stopDlPoll();
   const info = document.getElementById('dlInfo');
-  if (info) info.textContent = '❌ ' + msg;
+  if (info) info.innerHTML = ico('x-circle') + ' ' + escHtml(String(msg));
 }
 function dlModalHide() {
   const m = document.getElementById('dlModal');
   if (m) m.style.display = 'none';
 }
 
-// ═══ hash 路由（2026-09-02）═══
+// hash 路由（2026-09-02）
 function applyRoute(hash) {
   const h = (hash || '').replace(/^#/, '');
   if (!h) { switchPage('comic'); return; }
@@ -2414,7 +2414,7 @@ if (document.readyState === 'loading') {
   setTimeout(function () { applyRoute(location.hash); }, 200);
 }
 
-// ── 动量追踪器 ──
+// 动量追踪器
 function attachHorizontalScrollPhysics() {
   const scroller = document.querySelector('.rec-scroll');
   if (!scroller || scroller._hasPhysics) return;
@@ -2461,7 +2461,7 @@ function attachHorizontalScrollPhysics() {
   }, { passive: true });
 }
 
-/* ══ 阅读器返回体验增强：视觉瞬时退出 + 显存异步回收 ══ */
+/* 阅读器返回体验增强：视觉瞬时退出 + 显存异步回收 */
 // 递增令牌：teardown 执行前若用户已打开另一本，则放弃本次收尾，避免误关新书
 let _closeReaderToken = 0;
 
@@ -2518,7 +2518,7 @@ function closeReaderFast() {
 
 // 覆盖旧有的 closeReader 接口，保持对外兼容
 window.closeReader = closeReaderFast;
-// ── 物理手势与 popstate 极速拦截 ──
+// 物理手势与 popstate 极速拦截
 window.addEventListener('popstate', (e) => {
   const readerEl = document.getElementById('reader');
   const isReaderActive = readerEl && readerEl.style.display !== 'none' && !readerEl.classList.contains('exiting');
@@ -2576,7 +2576,7 @@ function updateLocalProgressAfterRead() {
     body: JSON.stringify({ page: curPage, totalPages: total })
   }).catch(() => {});
 }
-// ── 悬浮返回胶囊生命周期管理 ──
+// 悬浮返回胶囊生命周期管理
 let _readerBackTimer = null;
 
 function ensureFloatingBackButton() {

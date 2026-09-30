@@ -1476,10 +1476,10 @@ process.on('uncaughtException', (err) => {
 
 if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`📚 fnOS Comic Reader running at http://0.0.0.0:${PORT}`);
-    console.log(`📂 Comics directory: ${COMICS_DIR}`);
-    console.log(`💾 Data directory: ${DATA_DIR}`);
-    console.log(`🔐 JWT secret: ${JWT_SECRET.slice(0, 8)}... (持久化)`);
+    console.log(`fnOS Comic Reader running at http://0.0.0.0:${PORT}`);
+    console.log(`Comics directory: ${COMICS_DIR}`);
+    console.log(`Data directory: ${DATA_DIR}`);
+    console.log(`JWT secret: ${JWT_SECRET.slice(0, 8)}... (持久化)`);
 
     startAutoDecryptScheduler(readLibs);
   });

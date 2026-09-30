@@ -60,18 +60,18 @@ function buildReaderUI() {
       <span class="page-info" id="pageInfo">- / -</span>
       ${readerState.comic.online ? '' : `
       <button class="tool-btn" id="btnBookmark" onclick="toggleBookmark()" title="收藏">
-        ${readerState.bookmarked ? '★' : '☆'}
+        ${readerState.bookmarked ? ico('star', 'fill') : ico('star-o')}
       </button>
-      <button class="tool-btn" id="btnLike" onclick="toggleLikeComic()" title="点赞">🤍</button>`}
-      <button class="tool-btn" id="btnMode" onclick="toggleMode()" title="${isScroll ? '切换翻页' : '切换滚动'}">${isScroll ? '📜' : '📄'}</button>
-      <button class="tool-btn" id="btnDirection" onclick="toggleDirection()" title="阅读方向">⇄</button>
-      ${readerState.comic.online ? `<button class="tool-btn" id="btnDlOnline" onclick="dlCurrentOnlineChapter()" title="下载本话到本地库">⬇️</button>` : ''}
-      ${readerState.comic.ext === 'pdf' ? `<button class="tool-btn" id="pdfBtnToc" onclick="pdfToggleSidebar()" title="目录" style="display:none">☰</button>` : ''}
+      <button class="tool-btn" id="btnLike" onclick="toggleLikeComic()" title="点赞">${ico('heart-o')}</button>`}
+      <button class="tool-btn" id="btnMode" onclick="toggleMode()" title="${isScroll ? '切换翻页' : '切换滚动'}">${isScroll ? ico('flow') : ico('page')}</button>
+      <button class="tool-btn" id="btnDirection" onclick="toggleDirection()" title="阅读方向">${ico('swap')}</button>
+      ${readerState.comic.online ? `<button class="tool-btn" id="btnDlOnline" onclick="dlCurrentOnlineChapter()" title="下载本话到本地库">${ico('download')}</button>` : ''}
+      ${readerState.comic.ext === 'pdf' ? `<button class="tool-btn" id="pdfBtnToc" onclick="pdfToggleSidebar()" title="目录" style="display:none">${ico('menu')}</button>` : ''}
     </div>
 
     ${readerState.comic.ext === 'pdf' ? `
     <div class="pdf-sidebar" id="pdfSidebar">
-      <div class="pdf-sidebar-header"><span>目录</span><button class="tool-btn" onclick="pdfToggleSidebar()">✕</button></div>
+      <div class="pdf-sidebar-header"><span>目录</span><button class="tool-btn" onclick="pdfToggleSidebar()">${ico('x')}</button></div>
       <div class="pdf-toc" id="pdfToc"></div>
     </div>` : ''}
 
@@ -88,8 +88,8 @@ function buildReaderUI() {
 
     <div class="reader-bottombar" id="readerBottombar">
       <div class="bottombar-actions">
-        <button class="bottombar-btn" onclick="changeZoom('fit-width')" title="适应宽度">↔</button>
-        <button class="bottombar-btn" onclick="changeZoom('fit-height')" title="适应高度">↕</button>
+        <button class="bottombar-btn" onclick="changeZoom('fit-width')" title="适应宽度">${ico('h-arrows')}</button>
+        <button class="bottombar-btn" onclick="changeZoom('fit-height')" title="适应高度">${ico('v-arrows')}</button>
         <button class="bottombar-btn" onclick="changeZoom('100')" title="100%">1:1</button>
       </div>
       <input type="range" class="page-slider" id="pageSlider" min="1" max="${readerState.totalPages || 100}" value="${readerState.currentPage}" oninput="jumpToPage(this.value)">
@@ -483,20 +483,20 @@ function updateUI() {
 
 function updateBookmarkBtn() {
   const btn = document.getElementById('btnBookmark');
-  if (btn) btn.textContent = readerState.bookmarked ? '★' : '☆';
+  if (btn) btn.innerHTML = readerState.bookmarked ? ico('star', 'fill') : ico('star-o');
 }
 
 function updateModeBtn() {
   const btn = document.getElementById('btnMode');
   if (!btn) return;
-  if (readerState.mode === 'scroll') btn.textContent = '📜';
-  else if (readerState.mode === 'double') btn.textContent = '⊟';
-  else btn.textContent = '📄';
+  if (readerState.mode === 'scroll') btn.innerHTML = ico('flow');
+  else if (readerState.mode === 'double') btn.innerHTML = ico('pages');
+  else btn.innerHTML = ico('page');
 }
 
 function updateDirectionBtn() {
   const btn = document.getElementById('btnDirection');
-  if (btn) btn.textContent = readerState.direction === 'rtl' ? '⇦' : '⇄';
+  if (btn) btn.innerHTML = readerState.direction === 'rtl' ? ico('arrow-left') : ico('swap');
 }
 
 function saveProgress() {
@@ -891,10 +891,10 @@ function buildEpubUI() {
         <button class="back-btn" onclick="closeEpubReader()" title="返回">←</button>
         <span class="comic-title">${escHtml(epubState.comic.name)}</span>
         <span class="chapter-info" id="epubChapterInfo"></span>
-        <button class="tool-btn" id="epubBtnBookmark" onclick="epubToggleBookmark()" title="收藏">☆</button>
+        <button class="tool-btn" id="epubBtnBookmark" onclick="epubToggleBookmark()" title="收藏">${ico('star-o')}</button>
         <button class="tool-btn" id="epubBtnSum" onclick="epubShowSummary()" title="AI 章节总结">AI</button>
-        <button class="tool-btn" id="epubBtnAnnot" onclick="epubShowAnnotations()" title="批注">✎<span class="annot-badge" id="epubAnnotBadge"></span></button>
-        <button class="tool-btn" onclick="epubToggleSidebar()" title="目录">☰</button>
+        <button class="tool-btn" id="epubBtnAnnot" onclick="epubShowAnnotations()" title="批注">${ico('pen')}<span class="annot-badge" id="epubAnnotBadge"></span></button>
+        <button class="tool-btn" onclick="epubToggleSidebar()" title="目录">${ico('menu')}</button>
       </div>
       <div class="epub-body">
         <div class="epub-sidebar" id="epubSidebar">
@@ -904,7 +904,7 @@ function buildEpubUI() {
               <a class="epub-tab" id="epubTabSum" onclick="epubSwitchTab('sum')">总结</a>
               <a class="epub-tab" id="epubTabNote" onclick="epubSwitchTab('note')">批注</a>
             </span>
-            <button class="tool-btn" onclick="epubToggleSidebar()">✕</button>
+            <button class="tool-btn" onclick="epubToggleSidebar()">${ico('x')}</button>
           </div>
           <div class="epub-toc" id="epubToc"></div>
           <div class="epub-summary" id="epubSummary" style="display:none"></div>
@@ -932,16 +932,16 @@ function buildEpubUI() {
         <span class="epub-font-label" id="epubFontLabel">18px</span>
         <button class="bottombar-btn" onclick="epubFontSize(2)">A+</button>
         <span class="epub-sep">|</span>
-        <button class="bottombar-btn" onclick="epubLineHeight(-0.2)">↕-</button>
+        <button class="bottombar-btn" onclick="epubLineHeight(-0.2)">${ico('v-arrows')}-</button>
         <span class="epub-font-label" id="epubLineLabel">1.8</span>
-        <button class="bottombar-btn" onclick="epubLineHeight(0.2)">↕+</button>
+        <button class="bottombar-btn" onclick="epubLineHeight(0.2)">${ico('v-arrows')}+</button>
         <span class="epub-sep">|</span>
         <button class="bottombar-btn" onclick="epubCycleFont()" id="epubFontBtn" title="字体">f</button>
-        <button class="bottombar-btn" onclick="epubCycleTheme()" id="epubThemeBtn" title="主题">◐</button>
+        <button class="bottombar-btn" onclick="epubCycleTheme()" id="epubThemeBtn" title="主题">${ico('contrast')}</button>
         <span style="flex:1"></span>
         <div class="epub-progress" id="epubProgress"></div>
-        <button class="bottombar-btn" onclick="epubPrevChapter()">◀</button>
-        <button class="bottombar-btn" onclick="epubNextChapter()">▶</button>
+        <button class="bottombar-btn" onclick="epubPrevChapter()">${ico('chevron-left')}</button>
+        <button class="bottombar-btn" onclick="epubNextChapter()">${ico('chevron-right')}</button>
       </div>
     </div>
   `;
@@ -1018,10 +1018,10 @@ function epubCycleFont() {
 
 function epubCycleTheme() {
   const themes = ['dark', 'sepia', 'light'];
-  const icons = { dark: '🌙', sepia: '📜', light: '☀️' };
+  const icons = { dark: ico('moon'), sepia: ico('contrast'), light: ico('sun') };
   const idx = themes.indexOf(epubState.theme);
   epubState.theme = themes[(idx + 1) % themes.length];
-  document.getElementById('epubThemeBtn').textContent = icons[epubState.theme];
+  document.getElementById('epubThemeBtn').innerHTML = icons[epubState.theme];
   postEpubMsg({ type: 'theme', value: epubState.theme });
 }
 
@@ -1033,7 +1033,7 @@ function postEpubMsg(msg) {
 }
 
 function epubToggleBookmark() { epubState.comic.bookmarked = !epubState.comic.bookmarked; updateEpubBookmarkBtn(); ComicAPI.toggleBookmark(epubState.comic.id).catch(() => {}); }
-function updateEpubBookmarkBtn() { const btn = document.getElementById('epubBtnBookmark'); if (btn) btn.textContent = epubState.comic.bookmarked ? '★' : '☆'; }
+function updateEpubBookmarkBtn() { const btn = document.getElementById('epubBtnBookmark'); if (btn) btn.innerHTML = epubState.comic.bookmarked ? ico('star', 'fill') : ico('star-o'); }
 
 function annotColorHex(c) {
   return { yellow: '#ffe066', green: '#8ce99a', blue: '#74c0fc', pink: '#f783ac' }[c] || '#ffe066';
@@ -1289,7 +1289,7 @@ function renderChapterSummary(s) {
   const H = [];
   H.push(`<div class="sum-head">${escHtml(s.title || String(chTitle))}</div>`);
   if (s.framework && s.framework.length) {
-    H.push('<div class="sum-sec"><div class="sum-sec-t">📐 知识框架</div>');
+    H.push('<div class="sum-sec"><div class="sum-sec-t">' + ico('layout') + ' 知识框架</div>');
     s.framework.forEach(f => {
       H.push(`<div class="sum-fw"><div class="sum-fw-t">${escHtml(f.t || '')}</div>`);
       if (f.items && f.items.length) H.push('<ul>' + f.items.map(i => `<li>${escHtml(i)}</li>`).join('') + '</ul>');
@@ -1298,22 +1298,22 @@ function renderChapterSummary(s) {
     H.push('</div>');
   }
   if (s.concepts && s.concepts.length) {
-    H.push('<div class="sum-sec"><div class="sum-sec-t">🔑 核心概念</div>');
+    H.push('<div class="sum-sec"><div class="sum-sec-t">' + ico('key') + ' 核心概念</div>');
     s.concepts.forEach(c => H.push(`<div class="sum-cpt"><b>${escHtml(c.term || '')}</b>${escHtml(c.desc || '')}</div>`));
     H.push('</div>');
   }
   if (s.statutes && s.statutes.length) {
-    H.push('<div class="sum-sec"><div class="sum-sec-t">⚖️ 重点法条</div>');
+    H.push('<div class="sum-sec"><div class="sum-sec-t">' + ico('scale') + ' 重点法条</div>');
     s.statutes.forEach(c => H.push(`<div class="sum-law"><span class="sum-law-n">${escHtml(c.law || '')}</span>${c.article ? `<span class="sum-law-a">${escHtml(c.article)}</span>` : ''}<div class="sum-law-d">${escHtml(c.note || '')}</div></div>`));
     H.push('</div>');
   }
   if (s.qa && s.qa.length) {
-    H.push('<div class="sum-sec"><div class="sum-sec-t">💡 思考题思路</div>');
+    H.push('<div class="sum-sec"><div class="sum-sec-t">' + ico('bulb') + ' 思考题思路</div>');
     s.qa.forEach(q => H.push(`<div class="sum-qa"><div class="sum-q">Q：${escHtml(q.q || '')}</div><div class="sum-a">${escHtml(q.a || '')}</div></div>`));
     H.push('</div>');
   }
   if (s.tips && s.tips.length) {
-    H.push('<div class="sum-sec"><div class="sum-sec-t">⚠️ 易错提醒</div><ul class="sum-tips">' + s.tips.map(t => `<li>${escHtml(t)}</li>`).join('') + '</ul></div>');
+    H.push('<div class="sum-sec"><div class="sum-sec-t">' + ico('alert') + ' 易错提醒</div><ul class="sum-tips">' + s.tips.map(t => `<li>${escHtml(t)}</li>`).join('') + '</ul></div>');
   }
   H.push('<div class="sum-foot">内容由 AI 依据教材整理，仅供复习参考，一切以教材原文为准</div>');
   el.innerHTML = H.join('');
@@ -1337,7 +1337,7 @@ function renderAnnotList() {
       <div class="epub-note-head">
         <span class="epub-note-dot" style="background:${annotColorHex(a.color)}"></span>
         <span class="epub-note-ch">${escHtml(String(chTitle).slice(0, 20))}</span>
-        <button class="epub-note-del" onclick="annotDelete('${a.id}')" title="删除">✕</button>
+        <button class="epub-note-del" onclick="annotDelete('${a.id}')" title="删除">${ico('x')}</button>
       </div>
       <div class="epub-note-quote" onclick="annotGoto('${a.id}')">${escHtml(a.text.slice(0, 120))}</div>
       ${a.note ? `<div class="epub-note-text">${escHtml(a.note)}</div>` : ''}
@@ -1535,7 +1535,7 @@ function toggleLikeComic() {
   fetch(`/api/comic/${comic.id}/like`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` } })
     .then(r => r.json()).then(d => {
       likeState = d;
-      btn.textContent = d.liked ? '❤️' : '🤍';
+      btn.innerHTML = d.liked ? ico('heart', 'fill') : ico('heart-o');
       if (d.totalLikes > 0) btn.title = `${d.totalLikes}人喜欢`;
     }).catch(() => {});
 }

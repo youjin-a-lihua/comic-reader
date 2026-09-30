@@ -1,6 +1,6 @@
 {
   "name": "comic-reader",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "通用漫画阅读器 — 本地 PDF/CBZ/CBR/EPUB 阅读 + 可插拔在线源（jm 等）。自带账号登录、书架、进度、AstrBot 联动。",
   "main": "server.js",
   "scripts": {

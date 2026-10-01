@@ -414,6 +414,31 @@ body[data-layout="pragmatic"] .series-grid { grid-template-columns: repeat(auto-
   animation: fadeUp 0.6s var(--spring) both !important;
 }
 
+/* Records whose comic left the scan: shown greyed out so the entry does not silently vanish. */
+.manga-card--missing { cursor: default; }
+.manga-card--missing .manga-cover-wrap { opacity: 0.4; filter: grayscale(1); }
+.manga-card--missing .manga-meta-wrapper .title { opacity: 0.55; }
+.manga-card--missing .author { opacity: 0.6; }
+.badge-missing {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  padding: 4px 6px; font-size: 10px; font-weight: 600; text-align: center;
+  color: #fff; background: rgba(255,69,58,0.82);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.manga-card--missing .placeholder-cover { color: rgba(255,255,255,0.5); }
+
+.missing-notice {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+  font-size: 12px; line-height: 1.5;
+  color: #ffb4a8; background: rgba(255,69,58,0.1);
+  border: 1px solid rgba(255,69,58,0.28);
+}
+.missing-notice .ico { flex: 0 0 auto; margin-top: 1px; }
+.profile-item--missing { opacity: 0.75; }
+.profile-item--missing .profile-cover { display: flex; align-items: center; justify-content: center; color: var(--text-sub); }
+.profile-item--missing .title { color: var(--text-sub); }
+
 @media (max-width: 768px) {
   body[data-layout="spatial"] .manga-card { box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
   body[data-layout="pragmatic"] .manga-cover-wrap { box-shadow: 0 2px 8px rgba(0,0,0,0.25); }

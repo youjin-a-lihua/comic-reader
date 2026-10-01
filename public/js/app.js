@@ -273,28 +273,37 @@ function renderContinueCard(comic) {
 
 function renderComicCard(comic, delay = 0) {
   const authorStr = (comic.authors || []).slice(0, 2).join('、');
-  const coverUrl = ComicAPI.getCoverUrl(comic.id);
+  const coverUrl = comic.missing ? '' : ComicAPI.getCoverUrl(comic.id);
   const progressPct = comic.progress && comic.progress.totalPages > 0
     ? Math.round((comic.progress.page / comic.progress.totalPages) * 100) : 0;
 
   const meta = parseMangaMeta(comic.name);
   const title = meta.title || comic.name;
   const titleAuthor = (comic.authors && comic.authors.length > 0) ? comic.authors.slice(0,2).join('、') : meta.author;
-  return `<div class="manga-card" style="animation-delay:${delay}s"
-    onclick="openComicById('${comic.id}')"
-    oncontextmenu="event.preventDefault();showComicMenu(event,'${comic.id}')">
+  return `<div class="manga-card${comic.missing ? ' manga-card--missing' : ''}" style="animation-delay:${delay}s"
+    onclick="${comic.missing ? `showMissingComicTip('${comic.id}')` : `openComicById('${comic.id}')`}"
+    oncontextmenu="${comic.missing ? 'event.preventDefault()' : `event.preventDefault();showComicMenu(event,'${comic.id}')`}">
     <div class="manga-cover-wrap">
       ${coverUrl ? `<img src="${coverUrl}" class="manga-cover" alt="" loading="lazy" decoding="async" onerror="this.parentElement.innerHTML='<div class=placeholder-cover>' + ico('book') + '</div>'">`
-        : `<div class="placeholder-cover">${escHtml(comic.name.slice(0, 2))}</div>`}
+        : `<div class="placeholder-cover">${comic.missing ? ico('alert') : escHtml(comic.name.slice(0, 2))}</div>`}
       ${progressPct > 0 ? `<div class="progress-indicator"><div class="fill" style="width:${progressPct}%"></div></div>` : ''}
       ${comic.bookmarked ? '<div class="badge-bookmark">' + ico('star', 'fill') + '</div>' : ''}
       ${comic.isTranslated ? '<div class="badge-translated">译</div>' : ''}
+      ${comic.missing ? '<div class="badge-missing">文件已不存在</div>' : ''}
     </div>
     <div class="manga-meta-wrapper">
       <div class="title">${escHtml(title)}</div>
-      ${titleAuthor ? `<div class="author">${ico('pen')} ${escHtml(titleAuthor)}</div>` : ''}
+      ${comic.missing ? '<div class="author">记录已失效，点击查看</div>'
+        : (titleAuthor ? `<div class="author">${ico('pen')} ${escHtml(titleAuthor)}</div>` : '')}
     </div>
   </div>`;
+}
+
+// The comic left the scan (deleted or renamed outside the app) but the record is kept,
+// so the user can see what happened instead of finding the entry silently gone.
+function showMissingComicTip(id) {
+  const stored = (window._missingNames || {})[id];
+  confirm('《' + (stored || id) + '》对应的文件已不在书库中。\n\n可能被删除、移动或改名。记录仍为你保留，可在「个人」页或管理后台清理。');
 }
 
 function showComicMenu(event, comicId) {
@@ -330,7 +339,28 @@ async function deleteComic(id) {
     .flatMap(s => (s.items || []))
     .find(c => c.id === id);
   const name = comic ? comic.name : id;
-  if (!confirm('确定删除《' + name + '》？\n\n将永久删除：漫画文件本体 + 封面 + 全部元数据（进度/收藏/浏览/点赞/评论/书架），不可恢复！')) return;
+
+  // Ask the server what this delete touches, so the confirm prompt can name the affected users.
+  let impact = null;
+  try {
+    const r = await api('/api/comic/' + encodeURIComponent(id) + '/impact');
+    if (r.ok) impact = await r.json();
+  } catch (e) { }
+
+  let msg = '确定删除《' + name + '》？\n\n将永久删除：漫画文件本体 + 封面 + 全部元数据（进度/收藏/浏览/点赞/评论/书架），不可恢复！';
+  if (impact && impact.users && impact.users.length > 0) {
+    const others = impact.users.filter(u => u.user !== (JSON.parse(localStorage.getItem('fn_comic_user') || '{}').username));
+    if (others.length > 0) {
+      msg += '\n\n注意：以下用户的记录会一并删除\n' +
+        others.slice(0, 8).map(u => '· ' + u.user + (u.bookmarked ? '（已收藏）' : '') + (u.page > 0 ? ' 读到 ' + u.page : '')).join('\n') +
+        (others.length > 8 ? '\n· 等共 ' + others.length + ' 人' : '');
+    }
+  }
+  if (impact && impact.likes > 0) msg += '\n\n点赞：' + impact.likes + ' 条';
+  if (impact && impact.comments > 0) msg += '\n评论：' + impact.comments + ' 条';
+  if (impact && impact.shelfCount > 0) msg += '\n书架引用：' + impact.shelfCount + ' 处';
+
+  if (!confirm(msg)) return;
   try {
     const r = await api('/api/comic/' + encodeURIComponent(id), { method: 'DELETE' });
     const d = await r.json().catch(() => ({}));
@@ -1414,6 +1444,12 @@ async function renderProfile() {
 function renderProfileContent(container, bookmarks, recent, downloads) {
   let html = '';
 
+  // Names for the "file is gone" prompt. Both lists may hold records with no comic behind them.
+  window._missingNames = {};
+  for (const c of [...bookmarks, ...recent]) if (c.missing && c.name) window._missingNames[c.id] = c.name;
+
+  const missingCount = [...bookmarks, ...recent].filter(c => c.missing).length;
+
   html += '<h2 class="section-title">收藏 <span class="count">' + bookmarks.length + ' 本</span></h2>';
   if (bookmarks.length > 0) {
     html += '<div class="library-grid profile-grid">';
@@ -1423,11 +1459,26 @@ function renderProfileContent(container, bookmarks, recent, downloads) {
     html += '<div class="empty-state"><p>还没有收藏</p><p class="hint">阅读时长按漫画或点 ' + ico('star', 'fill') + ' 即可收藏</p></div>';
   }
 
+  if (missingCount > 0) {
+    html += '<div class="missing-notice">' + ico('alert') + ' 有 ' + missingCount +
+      ' 条记录对应的文件已不在书库中（被删除、移动或改名），记录仍然保留，可在管理后台清理。</div>';
+  }
+
   const watching = recent.filter(c => c.progress && c.progress.page > 0);
   html += '<h2 class="section-title" style="margin-top:24px">最近观看 <span class="count">' + watching.length + ' 本</span></h2>';
   if (watching.length > 0) {
     html += '<div class="profile-list">';
     html += watching.map(c => {
+      if (c.missing) {
+        return `<div class="profile-item profile-item--missing" onclick="showMissingComicTip('${c.id}')">
+          <div class="profile-cover">${ico('alert')}</div>
+          <div class="profile-info">
+            <div class="title">${escHtml(c.name || '已删除的漫画')}</div>
+            <div class="meta">文件已不在书库中${c.progress.updatedAt ? ' · 记录于 ' + escHtml(fmtTimeCn(c.progress.updatedAt)) : ''}</div>
+          </div>
+          <span class="profile-arrow">${ico('chevron-right')}</span>
+        </div>`;
+      }
       const pct = c.progress && c.progress.totalPages > 0
         ? Math.round((c.progress.page / c.progress.totalPages) * 100) : 0;
       const coverUrl = ComicAPI.getCoverUrl(c.id);

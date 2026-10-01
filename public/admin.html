@@ -142,6 +142,20 @@ body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%,
 </div>
 <div class="msg" id="deleteMsg"></div>
 </div>
+
+<div class="admin-card">
+<h2>失效阅读记录 <span style="font-size:12px;color:#636368;font-weight:400">（文件已不在书库）</span></h2>
+<p style="font-size:12px;color:#98989d;margin:0 0 14px;line-height:1.6">
+  漫画文件如果在应用之外（SMB / FTP / 命令行）被删除、移动或改名，其他用户留下的阅读进度与收藏记录不会自动清除，
+  会变成指向空处的「失效记录」。下面列出这些记录，可按需清理。清理只删除记录，不触碰任何文件。
+</p>
+<div class="form-row" style="align-items:center">
+  <button class="btn btn-ghost" onclick="loadOrphans()">刷新列表</button>
+  <button class="btn btn-ghost" onclick="cleanOrphans(null)" id="cleanAllBtn" style="display:none">清理全部</button>
+</div>
+<ul class="user-list" id="orphanList"><div class="log-empty">未加载</div></ul>
+<div class="msg" id="orphanMsg"></div>
+</div>
 </div>
 
 <script>
@@ -317,7 +331,47 @@ async function loadAudit(offset) {
   }
 }
 
-loadUsers(); loadLibs(); loadSettings(); loadAudit(0);
+async function loadOrphans(){
+  var list=document.getElementById('orphanList');
+  list.innerHTML='<div class="log-empty">加载中…</div>';
+  try{
+    var r=await api('/api/admin/orphans'); var d=await r.json();
+    var items=d.entries||[];
+    document.getElementById('cleanAllBtn').style.display=items.length?'inline-block':'none';
+    if(!items.length){ list.innerHTML='<div class="log-empty">没有失效记录</div>'; return; }
+    list.innerHTML=items.map(function(e){
+      var tags=[];
+      if(e.bookmarked) tags.push('已收藏');
+      if(e.page>0) tags.push('读到 '+e.page);
+      return '<li>'
+        + '<div class="user-main"><div class="user-name">'+esc(e.name||e.id)+'</div>'
+        + '<div class="log-ip">'+esc(e.user)+(tags.length?' · '+tags.join(' · '):'')
+        + (e.updatedAt?' · '+esc(fmtTime(e.updatedAt)):'')+'</div></div>'
+        + '<button class="btn btn-ghost" data-oid="'+esc(e.id)+'" onclick="cleanOrphans([this.dataset.oid])">清理</button>'
+        + '</li>';
+    }).join('');
+  }catch(err){ list.innerHTML='<div class="log-empty">加载失败</div>'; }
+}
+
+async function cleanOrphans(ids){
+  var label = ids ? '这 1 条记录' : '全部失效记录';
+  if(!confirm('确定清理'+label+'？\n\n只删除记录，不触碰任何漫画文件。')) return;
+  try{
+    var r=await api('/api/admin/orphans/clean',{method:'POST',body:{ids:ids}});
+    var d=await r.json();
+    if(r.ok){ showMsg('orphanMsg','已清理 '+d.removed+' 条',0); loadOrphans(); }
+    else showMsg('orphanMsg',d.error||'清理失败',1);
+  }catch(e){ showMsg('orphanMsg','清理失败',1); }
+}
+
+function fmtTime(s){
+  if(!s) return '';
+  var d=new Date(s); if(isNaN(d)) return s;
+  var p=function(n){ return n<10?'0'+n:''+n; };
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
+
+loadUsers(); loadLibs(); loadSettings(); loadAudit(0); loadOrphans();
 </script>
 </body>
 </html>

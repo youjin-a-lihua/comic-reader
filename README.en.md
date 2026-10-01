@@ -142,6 +142,20 @@ Requires Node.js ≥ 20. `sharp` installs from a prebuilt binary, so no local to
 
 ## Changelog
 
+### v1.4.7 (2026-10-01)
+
+**Fix**
+- Fixed reading history and bookmarks vanishing once the underlying file was deleted or renamed.
+  `/api/continue` and `/api/bookmarks` used to silently drop any record that was missing from the scan,
+  so a comic removed outside the app (SMB / FTP / shell) would take that user's progress and bookmark with it,
+  while the record itself stayed in `progress.json`. Such records are now kept and flagged, shown greyed out with a "file no longer present" label.
+
+**Added**
+- Progress and bookmark records now store the comic title, so an orphaned record is still identifiable.
+- Deleting a comic now queries its impact first; the confirmation prompt lists the other users whose records will be lost, plus like, comment and shelf counts.
+- The admin panel has an "orphaned records" section listing every record whose file is gone, with per-entry and clean-all actions.
+  Backed by `GET /api/admin/orphans`, `POST /api/admin/orphans/clean` and `GET /api/comic/:id/impact`.
+
 ### v1.4.6 (2026-10-01)
 
 **Fix**

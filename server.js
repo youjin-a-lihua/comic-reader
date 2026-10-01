@@ -16,7 +16,9 @@ const {
   toggleBookmark,
   getContinueReading,
   getBookmarks,
-  removeComicFromAllUsers
+  removeComicFromAllUsers,
+  readAll: readAllProgress,
+  PROGRESS_FILE
 } = require('./lib/progress');
 const { getImageList, extractImage } = require('./lib/cbz');
 const { generate, prewarm, get: getCover, hasCover, saveCover } = require('./lib/thumbnail');
@@ -237,13 +239,16 @@ app.get('/api/continue', authMiddleware, async (req, res) => {
   const items = getContinueReading(req.user.username);
   const comicMap = await getComicMap();
 
+  // Keep records whose comic is no longer in the scan: dropping them silently made
+  // reading history disappear whenever a file was deleted or renamed outside the app.
   const result = items
-    .filter(item => comicMap[item.id])
-    .map(item => ({
-      ...comicMap[item.id],
-      progress: item,
-      hasCover: hasCover(item.id, comicMap[item.id].path)
-    }));
+    .map(item => {
+      const comic = comicMap[item.id];
+      if (!comic) {
+        return { id: item.id, name: item.name || '已删除的漫画', missing: true, progress: item, hasCover: false };
+      }
+      return { ...comic, progress: item, hasCover: hasCover(item.id, comic.path) };
+    });
 
   res.json(result);
 });
@@ -252,13 +257,15 @@ app.get('/api/bookmarks', authMiddleware, async (req, res) => {
   const items = getBookmarks(req.user.username);
   const comicMap = await getComicMap();
 
+  // Same as /api/continue: a bookmark must not vanish because the file was removed elsewhere.
   const result = items
-    .filter(item => comicMap[item.id])
-    .map(item => ({
-      ...comicMap[item.id],
-      progress: { page: 0, bookmarked: true },
-      hasCover: hasCover(item.id, comicMap[item.id].path)
-    }));
+    .map(item => {
+      const comic = comicMap[item.id];
+      if (!comic) {
+        return { id: item.id, name: item.name || '已删除的漫画', missing: true, progress: { page: 0, bookmarked: true }, hasCover: false };
+      }
+      return { ...comic, progress: { page: 0, bookmarked: true }, hasCover: hasCover(item.id, comic.path) };
+    });
 
   res.json(result);
 });
@@ -499,17 +506,99 @@ app.post('/api/comic/:id/progress', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'page 参数无效' });
   }
 
-  if (!(await findComic(req.params.id))) { return res.status(404).json({ error: '漫画不存在' }); }
+  const comic = await findComic(req.params.id);
+  if (!comic) { return res.status(404).json({ error: '漫画不存在' }); }
 
-  const result = saveProgress(req.user.username, req.params.id, pageNum, Number(totalPages) || 0);
+  const result = saveProgress(req.user.username, req.params.id, pageNum, Number(totalPages) || 0, comic.name);
   res.json(result);
 });
 
 app.post('/api/comic/:id/bookmark', authMiddleware, async (req, res) => {
-  if (!(await findComic(req.params.id))) { return res.status(404).json({ error: '漫画不存在' }); }
-  const result = toggleBookmark(req.user.username, req.params.id);
+  const comic = await findComic(req.params.id);
+  if (!comic) { return res.status(404).json({ error: '漫画不存在' }); }
+  const result = toggleBookmark(req.user.username, req.params.id, comic.name);
   res.json(result);
 });
+
+// Reports which users hold progress / bookmarks / likes / comments / shelf entries for a comic.
+// Its purpose is to warn before a delete, not to enforce anything.
+function impactOfDeletion(comicId, opts = {}) {
+  const exclude = new Set(opts.excludeUsers || []);
+  const affected = [];
+
+  try {
+    const all = readAllProgress();
+    for (const [user, entries] of Object.entries(all)) {
+      if (exclude.has(user)) continue;
+      const entry = entries && entries[comicId];
+      if (!entry) continue;
+      if (entry.bookmarked || (entry.page > 0)) {
+        affected.push({ user, bookmarked: !!entry.bookmarked, page: entry.page || 0, name: entry.name || '' });
+      }
+    }
+  } catch (e) { }
+
+  let likes = 0;
+  try {
+    const all = likesStore.read();
+    for (const v of Object.values(all || {})) {
+      if (Array.isArray(v) ? v.includes(comicId) : (v === comicId)) likes++;
+    }
+  } catch (e) { }
+
+  let shelfCount = 0;
+  try {
+    if (fs.existsSync(shelvesDir)) {
+      for (const f of fs.readdirSync(shelvesDir)) {
+        if (!f.endsWith('.json')) continue;
+        try {
+          const shelves = JSON.parse(fs.readFileSync(path.join(shelvesDir, f), 'utf-8'));
+          if (Array.isArray(shelves)) shelfCount += shelves.filter(s => s.items && s.items.includes(comicId)).length;
+        } catch (e) { }
+      }
+    }
+  } catch (e) { }
+
+  let comments = 0;
+  try {
+    const safe = String(comicId).replace(/[^\w.-]/g, '_').slice(0, 128);
+    const fp = path.join(commentsDir, `${safe}.json`);
+    if (fs.existsSync(fp)) {
+      const list = JSON.parse(fs.readFileSync(fp, 'utf-8'));
+      comments = Array.isArray(list) ? list.length : 0;
+    }
+  } catch (e) { }
+
+  return {
+    users: affected.sort((a, b) => (b.bookmarked ? 1 : 0) - (a.bookmarked ? 1 : 0)),
+    likes, shelfCount, comments
+  };
+}
+
+// Collects progress / bookmark records whose comic is no longer in the scan.
+// Files deleted outside the app never reach the delete route, so those records are orphaned.
+async function collectOrphans() {
+  const comicMap = await getComicMap();
+  const all = readAllProgress();
+  const entries = [];
+
+  for (const [user, records] of Object.entries(all || {})) {
+    for (const [id, v] of Object.entries(records || {})) {
+      if (comicMap[id]) continue;
+      entries.push({
+        user,
+        id,
+        name: (v && v.name) || '',
+        bookmarked: !!(v && v.bookmarked),
+        page: (v && v.page) || 0,
+        updatedAt: (v && v.updatedAt) || ''
+      });
+    }
+  }
+
+  entries.sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+  return entries;
+}
 
 async function deleteComicFully(comic) {
   const id = comic.id;
@@ -563,12 +652,21 @@ async function deleteComicFully(comic) {
   return errors;
 }
 
+app.get('/api/comic/:id/impact', authMiddleware, adminOnly, async (req, res) => {
+  const comic = await findComic(req.params.id);
+  if (!comic) return res.status(404).json({ error: '漫画不存在' });
+  res.json(impactOfDeletion(req.params.id));
+});
+
 app.delete('/api/comic/:id', authMiddleware, adminOnly, async (req, res) => {
   if (!getSettings().allowDeleteComic) {
     return res.status(403).json({ error: '删除功能未开启（请在控制面板开启"允许删除漫画"）' });
   }
   const comic = await findComic(req.params.id);
   if (!comic) return res.status(404).json({ error: '漫画不存在' });
+  // The comic itself is already gone from the scan at this point, so count only the
+  // other users whose metadata this delete will affect.
+  const impact = impactOfDeletion(req.params.id, { excludeUsers: [req.user.username] });
   const errors = await deleteComicFully(comic);
   audit.record({
     user: req.user.username, ip: audit.clientIp(req), action: 'delete-comic',
@@ -576,9 +674,9 @@ app.delete('/api/comic/:id', authMiddleware, adminOnly, async (req, res) => {
     result: errors.length ? 'partial' : 'ok',
   });
   if (errors.length) {
-    return res.json({ success: true, partial: true, deleted: comic.name, warnings: errors });
+    return res.json({ success: true, partial: true, deleted: comic.name, impact, warnings: errors });
   }
-  res.json({ success: true, deleted: comic.name });
+  res.json({ success: true, deleted: comic.name, impact });
 });
 
 const { listUsers } = require('./lib/auth');
@@ -639,6 +737,38 @@ app.put('/api/admin/users/:username/password', authMiddleware, adminOnly, async 
   });
   if (!result.success) return res.status(400).json({ error: result.error });
   res.json({ success: true });
+});
+
+app.get('/api/admin/orphans', authMiddleware, adminOnly, async (req, res) => {
+  const entries = await collectOrphans();
+  res.json({ entries, total: entries.length });
+});
+
+app.post('/api/admin/orphans/clean', authMiddleware, adminOnly, async (req, res) => {
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.filter(x => typeof x === 'string') : null;
+  const targets = ids
+    ? new Set(ids)
+    : new Set((await collectOrphans()).map(e => e.id));
+  if (targets.size === 0) return res.json({ success: true, removed: 0 });
+
+  let removed = 0;
+  const progressStore = getStore(PROGRESS_FILE, {});
+  progressStore.update(all => {
+    for (const [user, records] of Object.entries(all || {})) {
+      for (const id of Object.keys(records || {})) {
+        if (targets.has(id)) { delete records[id]; removed++; }
+      }
+      if (records && Object.keys(records).length === 0) delete all[user];
+    }
+  });
+  progressStore.flush();
+
+  audit.record({
+    user: req.user.username, ip: audit.clientIp(req), action: 'clean-orphans',
+    detail: `清理 ${removed} 条失效记录（${targets.size} 个 id）`,
+    result: 'ok',
+  });
+  res.json({ success: true, removed });
 });
 
 app.put('/api/admin/users/:username/role', authMiddleware, adminOnly, async (req, res) => {

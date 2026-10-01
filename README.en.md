@@ -142,6 +142,15 @@ Requires Node.js ≥ 20. `sharp` installs from a prebuilt binary, so no local to
 
 ## Changelog
 
+### v1.4.6 (2026-10-01)
+
+**Fix**
+- Fixed the library, continue-reading and bookmarks pages coming up empty for any account whose username is not ASCII.
+  `/api/library` interpolated the username straight into the `ETag` response header, and Node.js only accepts Latin-1 there.
+  A Chinese username made `setHeader` throw `ERR_INVALID_CHAR`, which aborted the whole route with a 500 and left the client without any catalogue data.
+  The username is now SHA-1 hashed before it goes into the `ETag`; the cache key stays per user and the value is always ASCII.
+  The defect dates back to the per-user cache introduced in v1.4.0 and only affected non-ASCII usernames.
+
 ### v1.4.5 (2026-09-30)
 
 **UI**

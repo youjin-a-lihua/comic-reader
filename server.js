@@ -751,7 +751,9 @@ app.get('/api/library', authMiddleware, async (req, res) => {
     const progress = getUserProgress(req.user.username);
 
     const progHash = crypto.createHash('md5').update(JSON.stringify(progress)).digest('hex').slice(0, 10);
-    const etag = `W/"lib-${_scanTime}-${req.user.username}-${typeFilter || 'all'}-${allComics.length}-${progHash}"`;
+    // Hash the username: non-ASCII names cannot go into a header value, and this keeps the cache key per user.
+    const userKey = crypto.createHash('sha1').update(req.user.username).digest('hex').slice(0, 8);
+    const etag = `W/"lib-${_scanTime}-${userKey}-${typeFilter || 'all'}-${allComics.length}-${progHash}"`;
     res.set('Cache-Control', 'no-cache'); // The cache bucket is per user, so switching accounts cannot reuse it.
     res.set('Vary', 'Authorization');
     res.set('ETag', etag);

@@ -1,272 +1,121 @@
-# Comic Reader · self-hosted manga & novel reader
+# Comic Reader
 
-A self-hosted reader for comics and books with two kinds of content source:
+> 中文说明：[README.md](README.md)
 
-- **Local library** — scans PDF / CBZ / CBR / EPUB on the server, generates covers, tracks reading progress, favourites and likes.
-- **Online sources (pluggable)** — ships with `jm` as an example source: search → detail → read online, with images restored server-side (de-obfuscation, referer bypass). The front end never deals with a site's protocol.
+A self-hosted reading server for comics, manga and novels. One container, readable from any browser, phone or tablet.
 
-Includes account login (JWT), shelves, progress sync and optional AstrBot integration.
+- Local library: scans PDF / CBZ / CBR / EPUB, generates covers, tracks reading progress
+- Encrypted PDFs: automatic decryption, password set in the admin panel or via environment
+- EPUB reader: TOC, typography, annotations & highlights, AI chapter summaries (see [ANNOTATIONS.en.md](ANNOTATIONS.en.md))
+- Multi-user: accounts, shelves, favourites, continue reading, rankings
+- Pluggable online sources: search / online reading / download to library, off by default (see [ONLINE_SOURCES.en.md](ONLINE_SOURCES.en.md))
+- Optional AstrBot integration
 
-> 中文版见 [README.md](README.md)
+Changelog: [CHANGELOG.md](CHANGELOG.md).
 
----
+## Quick start
 
-## Features
+Images are published to GHCR for linux/amd64 and linux/arm64, built automatically by GitHub Actions on every push:
 
-- Local library: PDF / CBZ / CBR (including encrypted PDFs) and EPUB
-- Search, rankings, full-library browsing, continue reading
-- Favourites, likes, custom shelves, multiple users
-- **Annotations / highlights** — select text in an EPUB to highlight it in one of four colours or attach a note. Stored per book on the server, so it survives refresh and follows you across devices. See [ANNOTATIONS.en.md](ANNOTATIONS.en.md)
-- **AI chapter summary** — one-click summary of the current EPUB chapter
-- **Online sources** — search / detail / chapters / online reading, images proxied and restored server-side
-- **Pluggable sources** — adding a site means dropping one file implementing the shared interface into `lib/sources/`
-- Optional AstrBot integration: enter its address and account in the UI to send `/jm`-style commands and poll the result
+```bash
+docker run -d --name comic-reader \
+  -p 3000:3000 \
+  -e TZ=Asia/Shanghai \
+  -v /path/to/comics:/comics \
+  -v comic-data:/app/data \
+  ghcr.io/youjin-a-lihua/comic-reader:latest
+```
 
----
-
-## Deploy (Docker Compose)
+Or with docker compose:
 
 ```bash
 git clone https://github.com/youjin-a-lihua/comic-reader.git
 cd comic-reader
-mkdir -p comics
-docker compose up -d --build
+mkdir comics
+docker compose up -d      # add --build to test local changes
 ```
 
-Books go in `comics/`. To use another directory, change the mount in `docker-compose.yml`.
+Open `http://<server-ip>:3000`. The first account to register becomes the administrator.
 
-Open `http://<your-host>:3000`. The first account to log in becomes the administrator; further users can be added under "Me".
-
-Data (users, shelves, JWT secret, AstrBot config) is persisted in the `comic-data` volume.
-
-### Without Compose
-
-```bash
-docker build -t comic-reader .
-docker run -d -p 3000:3000 \
-  -v $(pwd)/comics:/comics \
-  -v comic-data:/app/data \
-  --name comic-reader comic-reader
-```
-
----
-
-## Environment variables
+## Configuration
 
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3000` | Listen port |
-| `COMICS_DIR` | `/comics` | Local library root (mounted volume) |
-| `DATA_DIR` | `/app/data` | Runtime data directory — mount it, or you lose the admin account on restart |
-| `JWT_SECRET` | empty | Left empty, a secret is generated on first start and written to `DATA_DIR/.jwt-secret`. You may supply a fixed string of 32+ characters instead |
-| `ONLINE_SOURCE` | empty (off) | Which online sources to enable. Empty enables **none**. Accepts one (`jm`), several separated by commas or spaces (`jm,kavita`), or `all` for everything listed in `lib/sources/sources.json` |
-| `NOVEL_DIR` | empty | Absolute path to a novel directory; without it the "novels" library is not shown |
-| `DECRYPT_PASSWORD` | empty | Open password for encrypted PDFs. Can also be set on the admin page (**takes precedence** — it is persisted to `DATA_DIR/settings.json`). Empty in both places means nothing is decrypted. The value is **never sent back to the browser** (the page only shows configured/not) and is redacted to `***` in the audit log |
+| `COMICS_DIR` | `/comics` | Root of the local comics library (mounted volume) |
+| `DATA_DIR` | `/app/data` | Runtime data directory (persist with a volume) |
+| `JWT_SECRET` | empty | Leave empty to auto-generate on first start and store in `DATA_DIR/.jwt-secret`; or set a ≥32-char string |
+| `ONLINE_SOURCE` | empty (off) | Online sources to enable. Empty disables all of them. One name (`jm`), a comma-separated list (`jm,kavita`), or `all` for everything in `lib/sources/sources.json` |
+| `NOVEL_DIR` | empty | Absolute path to a novels directory; omit to hide the "Novels" library |
+| `DECRYPT_PASSWORD` | empty | Password for encrypted PDFs. Can also be set in the admin panel (stored in `DATA_DIR/settings.json`, takes precedence). Never sent back to the browser; masked as `***` in the audit log |
 
----
+## File permissions
 
-## How pluggable sources work
+The container runs as uid/gid 1000 and needs read access to the comics directory and write access to the data directory:
 
-> **Off by default.** The repo ships `jm` as an example source but **does not register or enable it** unless you set `ONLINE_SOURCE=jm` explicitly. Left empty, the whole online module is disabled: search, detail and the image proxy all answer "not enabled". Enabling a third-party site is always your decision.
-
-The online module is decoupled from any specific site. `server.js` only talks to sources through the `lib/sources` registry, so **adding or enabling a source never touches `server.js`**.
-
-**Source manifest** (`lib/sources/sources.json`):
-
-```json
-[
-  { "key": "jm", "name": "jm", "file": "jm.js", "enabledByDefault": false, "description": "example online source, enable manually" }
-]
+```bash
+sudo chown -R 1000:1000 ./data        # data directory (skip if using a named volume)
+sudo chmod -R a+rX /path/to/comics    # comics directory
 ```
 
-`ONLINE_SOURCE` decides what is enabled: unset (only sources with `enabledByDefault: true`, currently none) → `jm` → `jm,kavita` → `all`.
+You can also change the runtime identity with `user: "uid:gid"` (compose) or `docker run --user`.
+Typical symptoms of wrong permissions: `EACCES` during cover generation, progress not saved, `Permission denied` in logs.
 
-**The shared interface** (see `lib/sources/jm.js`):
+## Health check
 
-```js
-module.exports = {
-  name: 'jm',                       // source key
-  label: 'jm',                      // display name
-  search(keyword, order, page),     // -> { total, maxPage, comics:[{id,title,author,cover,tags,description}] }
-  album(id),                        // -> { id, title, author, cover, description, likes, tags, chapters:[{id,title}], related }
-  chapter(epId),                    // -> { epId, images:[url...] }
-  getCoverUrl(id), getImageUrl(epId, name),   // optional
-  decodeImage(buffer, parsed),      // restore a fetched image; return the buffer unchanged if not needed
-  parseImageUrl(u),                 // -> { kind, epId?, pictureName?, isGif } or null; the proxy uses it to pick a decoder
-};
+The image ships a `HEALTHCHECK` probing `GET /healthz` (unauthenticated, no disk access):
+
+```bash
+curl -s http://127.0.0.1:3000/healthz
+# {"ok":true,"version":"1.5.0","uptime":12,"scanReady":true,"online":false}
 ```
 
-**Adding a source**: implement the interface in a new file under `lib/sources/`, then add an entry to `lib/sources/sources.json` (`key` / `name` / `file` / `enabledByDefault`). The front end, back end and image proxy adapt automatically.
+## Upgrading & backup
 
-The image proxy (`lib/online-image.js`) handles SSRF checks, downloading and an LRU cache; with several sources it routes each image URL to the source that recognises it. Full details in [ONLINE_SOURCES.en.md](ONLINE_SOURCES.en.md).
+```bash
+docker compose pull && docker compose up -d
+```
 
----
+All data lives in `DATA_DIR` (the `comic-data` volume) and is backward compatible. Back it up before upgrading:
+
+```bash
+docker run --rm -v comic-data:/d -v $PWD:/b alpine tar czf /b/data.tgz -C /d .
+```
+
+## Pluggable online sources
+
+`jm` ships as an example source and is **off by default**: without `ONLINE_SOURCE` the online module is disabled entirely and the app is purely local.
+
+When enabled, the front end offers a source switcher and aggregates search across all enabled sources. Images are proxied and restored server-side (de-obfuscation, referer handling) with SSRF protection and caching.
+
+Adding a source takes two steps: implement the unified interface in a file under `lib/sources/`, then add an entry to `lib/sources/sources.json`. See [ONLINE_SOURCES.en.md](ONLINE_SOURCES.en.md) for the interface and a walkthrough.
 
 ## Layout
 
 ```
 server.js              Express entry point
 lib/
-  sources/              online sources: jm.js is the example, sources.json the manifest, index.js the registry
-  online-image.js      image proxy (SSRF guard + fetch + cache + decode dispatch)
-  scanner/cbz/epub/... local library scanning and parsing
-  progress/auth/...    progress, accounts, shelves
-public/                front end (index.html / app.js / reader.js / vendor/pdfjs ...)
-testdata/              a real book in EPUB + PDF for readability checks after deployment
+  sources/              Online sources: jm.js example, sources.json manifest, index.js registry
+  online-image.js       Image proxy (SSRF guard, fetch, cache, decode dispatch)
+  scanner / cbz / epub / decrypt / thumbnail ...
+  progress / auth / settings / jsonstore ...
+public/                Front end (index.html / app.js / reader.js / vendor/pdfjs ...)
 ```
-
----
-
-## Compliance and disclaimer
-
-This repository is a **generic reader**. The `jm` source is only **an example implementation** of the pluggable-source interface.
-
-- Online sources depend on third-party sites and may break or change at any time; nothing here guarantees or maintains their availability.
-- **Follow the laws and regulations of your jurisdiction** and only access content you are entitled to access.
-- Any copyright or compliance consequences of using an online source are yours; the project and its author accept no liability.
-- Online features are **off by default**: leave `ONLINE_SOURCE` unset and the app runs purely locally without contacting any third party.
-- Local post-processing of jm downloads (host `python3` + `jmcomic` + AstrBot) is out of scope for this repository and is not shipped with it.
-
----
 
 ## Development
 
 ```bash
 npm install
-npm start            # or npm run dev for watch mode; serves http://localhost:3000
+npm start            # or npm run dev (hot reload); default http://localhost:3000
 ```
 
-Requires Node.js ≥ 20. `sharp` installs from a prebuilt binary, so no local toolchain is needed.
+Requires Node.js ≥ 20 (`sharp` ships prebuilt binaries, no local compilation).
 
----
+## Disclaimer
 
-## Changelog
+`jm` is included only as an example implementation of the pluggable source interface.
 
-### v1.5.0 (2026-10-23)
-
-**Reading experience**
-- Added adjacent-page preloading: CBZ/CBR prefetch the next two images, PDF pre-renders the next page into an offscreen canvas (invalidated on zoom/viewport change, max 3 cached). Page turns measured at 300–800ms → 2–4ms.
-- Capped canvas device pixel ratio at 2; high-DPR phones were allocating tens of MB of VRAM per page.
-- pdf.js now loads on demand instead of shipping 352KB to every shelf view.
-- Scroll mode no longer stacks duplicate scroll listeners; fixed a new book being hidden by the previous reader's deferred teardown.
-
-**Fixes**
-- **EPUB TOC**: OPF manifest parsing no longer depends on attribute order (`id → href → media-type`). 23 of 79 novels (29%) had an empty chapter list.
-- **Auto-decrypt toggle now respected**: it previously only checked whether a password was set, so the watchdog kept scanning the whole library every cycle with a 1.2s per-file throttle. Now gated by the setting, plus a content fingerprint and incremental file selection.
-- Deleting a comic now removes its fallback cover by `md5(path)`; the old `${id}.jpg` path never matched, so orphan covers accumulated.
-- Range responses destroy the read stream when the client disconnects, preventing fd leaks during long reading sessions.
-
-**Performance**
-- EPUB reuses zip handles (evicted by total bytes): repeat read on a 132MB book 62ms → 1ms, 10 image loads 677ms → 1ms.
-- `/api/library` cover existence now uses a directory index (one `readdir` + Set lookup): 1654 books went from 831ms of blocking `existsSync` to ~10ms.
-- Whole-library scans are de-duplicated in flight; the ETag now uses a content fingerprint (id+mtime+size) so clients stop re-downloading the full library every 10 minutes.
-
-**Performance**
-- EPUB reuses zip handles (evicted by total bytes): repeat read on a 132MB book 62ms → 1ms, 10 image loads 677ms → 1ms.
-- `/api/library` cover existence now uses a directory index (one `readdir` + Set lookup): 1654 books went from 831ms of blocking `existsSync` to ~10ms.
-- Whole-library scans are de-duplicated in flight; the ETag now uses a content fingerprint (id+mtime+size) so clients stop re-downloading the full library every 10 minutes.
-
-**Image & portability**
-- Base image `node:20` (Debian, 1.28GB) → `node:22-alpine`, image size **1.28GB → 305MB**; switched to `npm ci` with the lockfile for reproducible builds.
-- The image now ships `bsdtar` (libarchive-tools). It previously had no `unrar` while `lib/cbz.js` only knew `unrar` — so **CBR, as advertised, never actually worked in the container**. It now falls back to bsdtar (RAR / RAR5).
-- Added `GET /healthz` (unauthenticated, no scan, no JWT work) plus a Dockerfile `HEALTHCHECK`, so compose / K8s / reverse proxies can probe the service.
-- Added GitHub Actions: pushes to `main` or `v*` tags build `linux/amd64` + `linux/arm64` and publish to GHCR.
-- `.dockerignore` now excludes `testdata` (55MB of samples): build context 58MB → 2.5MB.
-- Compose gained `TZ`, `DECRYPT_PASSWORD`, a published-image reference and a `user:` hint; the README documents permissions, health checks, upgrades and backups.
-
-### v1.4.7 (2026-10-01)
-
-**Fix**
-- Fixed reading history and bookmarks vanishing once the underlying file was deleted or renamed.
-  `/api/continue` and `/api/bookmarks` used to silently drop any record that was missing from the scan,
-  so a comic removed outside the app (SMB / FTP / shell) would take that user's progress and bookmark with it,
-  while the record itself stayed in `progress.json`. Such records are now kept and flagged, shown greyed out with a "file no longer present" label.
-
-**Added**
-- Progress and bookmark records now store the comic title, so an orphaned record is still identifiable.
-- Deleting a comic now queries its impact first; the confirmation prompt lists the other users whose records will be lost, plus like, comment and shelf counts.
-- The admin panel has an "orphaned records" section listing every record whose file is gone, with per-entry and clean-all actions.
-  Backed by `GET /api/admin/orphans`, `POST /api/admin/orphans/clean` and `GET /api/comic/:id/impact`.
-
-### v1.4.6 (2026-10-01)
-
-**Fix**
-- Fixed the library, continue-reading and bookmarks pages coming up empty for any account whose username is not ASCII.
-  `/api/library` interpolated the username straight into the `ETag` response header, and Node.js only accepts Latin-1 there.
-  A Chinese username made `setHeader` throw `ERR_INVALID_CHAR`, which aborted the whole route with a 500 and left the client without any catalogue data.
-  The username is now SHA-1 hashed before it goes into the `ETag`; the cache key stays per user and the value is always ASCII.
-  The defect dates back to the per-user cache introduced in v1.4.0 and only affected non-ASCII usernames.
-
-### v1.4.5 (2026-09-30)
-
-**UI**
-- Every emoji in the interface is now an inline SVG icon: a 34-symbol set plus an `ico()` helper, both defined inside `index.html` (no new files, no external dependency). 100 replacements across `app.js`, `reader.js`, `index.html` and `login.html`
-- Buttons that used a bare glyph as an icon (`↕` `↔` `⇄` `⇦` `⊟`) joined the same set; typographic arrows (`→` `←`) were left alone
-- Icons are `1em` and use `currentColor`, so they follow the surrounding font size and colour with no layout change
-- Dropped the decorative `──` / `═══` comment banners in `app.js` (19 lines)
-- Asset version `?v=20260924d` to `?v=20260930` so clients pick up the new files
-
-### v1.4.4 (2026-09-30)
-
-**Docs**
-- Removed the comment noise inside the README code blocks (comments such as `# start` that restate the next line, and the `<this repo>` placeholder now the real URL). The v1.4.1 pass only looked at `.js/.css/.html` - markdown was never audited
-- Dropped the chatty, salesy wording and the emoji in headings and list bullets, in favour of plain statements of fact
-
-### v1.4.3 (2026-09-29)
-
-**Security**
-- Closed the remaining gaps in credential handling: `GET /api/admin/settings` **no longer returns the plaintext** (it only reports `hasDecryptPassword`); the settings field is now `type="password"`; the **audit log no longer stores the raw value** (redacted to `***`); and a *Clear password* button was added, since a stored password could previously never be removed
-
-### v1.4.2 (2026-09-29)
-
-**Security**
-- **Removed the hardcoded default decrypt password.** The plaintext default baked into `lib/settings.js` is gone; the password now comes from the admin page or `DECRYPT_PASSWORD`. With neither set, auto-decrypt stays idle rather than trying an empty password
-
-### v1.4.1 (2026-09-29)
-
-**Housekeeping / docs**
-- Trimmed comment noise across the codebase: dated change logs, restatements of the code below and decorative separators are gone; comment density went from 9.8% to 0.8% and the notes that remain are in English
-- English versions of the documentation: [ANNOTATIONS.en.md](ANNOTATIONS.en.md) · [ONLINE_SOURCES.en.md](ONLINE_SOURCES.en.md)
-
-### v1.4.0 (2026-09-24)
-
-**Added · annotations**
-- **Select text → highlight or annotate** in the EPUB reader. Four colours (yellow / green / blue / pink) or attach a note. Stored per book on the server, so a refresh or another device still shows it
-- A "" button with a count badge in the toolbar opens an annotations tab in the sidebar: jump to a highlight, edit it, or delete it
-- **AI chapter summary** — the "AI" button summarises the current chapter (cached client-side)
-- New endpoints: `GET/POST /api/comic/:id/annotations`, `PATCH/DELETE /api/comic/:id/annotations/:aid`, `GET /api/comic/:id/summary[/:chapter]`
-  - Stored in `DATA_DIR/annotations/<comicId>.json`, cleaned up when a book is deleted
-  - Details in [ANNOTATIONS.en.md](ANNOTATIONS.en.md)
-
-**Fixed**
-- The page-turn hot zone (`.epub-tap-zone`) was 25% wide with `z-index: 5`, floating above the text and making **the outer 25% on each side unselectable** — a click there turned the page instead. It now uses `max(10%, calc((100% - 800px) / 2))`, so wide screens keep it outside the text column. Page turning still works from the buttons
-- **Books without tags were invisible in the "comics" tab**: grouping only collected tagged books, and the fallback never fired on a large library (170+ books affected here). They now form an "uncategorised" group
-- **A PDF placed in the novel library was still treated as a comic**: a sidecar-declared `type` now wins over extension sniffing. Note the scanner has both a sync and an async path — patching only one changes nothing
-- EPUB table of contents failed to match chapter titles when `spine.href` carried a directory prefix such as `OEBPS/`
-
-### v1.3.0 (2026-09-21)
-
-**Performance**
-- **Stopped the watchdog from reading every SSD pointlessly.** `lib/decrypt.js` used to load the **entire file** just to test whether a PDF was encrypted (about 1290 books averaging 26 MB, every 30 minutes), measured at **1.6 TB/day** read on `/vol3` and 6.0% average CPU.
-  It now inspects only the **last 256 KB** — the trailer dictionary sits at the end of the file — with a safety valve: if no `%%EOF` appears in that window it falls back to the full path.
-  - Result: 1.6 TB/day → 6.4 GB (**−99.6%**), steady-state CPU 6.0% → 0.2%
-  - Regression: encrypted PDFs are still detected and decrypted; plaintext files are byte-for-byte untouched
-
-**Added**
-- **Audit log** (admin only): account, IP, time, action, result. JSONL append plus a 500-entry in-memory ring and 5 MB rotation
-- **Download cart**: long-press online comics to add them to a list, then download the whole cart
-- **Download history**: task results persisted to `downloads.json`
-
-**UX**
-- Login page and admin console moved onto the main design language
-- ↩ Fixed the missing back button on the online detail page
-- Fixed the detail page keeping the previous scroll position (and the resulting transition glitch)
-- Fixed a duplicated back button in the reader
-
-**Robustness / security**
-- Fixed settings not being persisted (`jsonstore` lacked a dirty flag, so switches such as auto-decrypt reverted on restart)
-- Express 4 never sees async rejections, which left requests **hanging forever**; every handler is now wrapped
-- `users.json` is written atomically — a truncated file used to look like a fresh install, **recreating the admin and losing every account**
-- Fixed a missing `await` in the CBZ/CBR page endpoint that made **archives unreadable**
-- Image proxy **SSRF hardening**: resolve DNS and judge the resulting addresses (covers IPv6, IPv4-mapped, decimal IPs and domains pointing inward), plus a 20 MB response cap and CRLF injection guards
-- Cover cache keys moved to a hash of the absolute path so different comics can no longer **share a cover**
+- Availability of online sources depends on third-party sites and may change or disappear at any time; this project does not guarantee or maintain reachability of any site.
+- Follow the laws of your country or region and only access content you are entitled to access.
+- Any copyright or compliance responsibility from using online sources lies with the user.
+- Online features are off by default; without `ONLINE_SOURCE` the app makes no third-party requests.

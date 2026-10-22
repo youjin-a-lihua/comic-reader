@@ -1,15 +1,23 @@
 services:
   comic-reader:
+    # 优先用已发布的多架构镜像；本地没有时 docker compose up --build 会自行构建
+    image: ghcr.io/youjin-a-lihua/comic-reader:latest
     build: .
     container_name: comic-reader
     ports:
       - "${PORT:-3000}:3000"
+    # 容器以 node(uid 1000) 运行：漫画目录需可读、数据目录需可写。
+    # 宿主机目录属主不同的话，取消下面一行注释并改成你的 uid:gid（id -u / id -g）。
+    # user: "1000:1000"
     environment:
       PORT: 3000
+      TZ: "${TZ:-Asia/Shanghai}"
       COMICS_DIR: /comics
       DATA_DIR: /app/data
       # 留空则首次启动自动生成 JWT 密钥并写入 DATA_DIR/.jwt-secret（挂卷后持久化）
       JWT_SECRET: "${JWT_SECRET:-}"
+      # 加密 PDF 的解密口令；留空则自动解密保持待机（也可在管理后台填写）
+      DECRYPT_PASSWORD: "${DECRYPT_PASSWORD:-}"
       # 在线源：默认不启用。需要时在外层 .env 设置 ONLINE_SOURCE=jm 开启（见 lib/sources/）
       ONLINE_SOURCE: "${ONLINE_SOURCE:-}"
       # 可选：小说目录（不设则不显示「小说」库）
@@ -18,6 +26,7 @@ services:
       # 把你的漫画目录挂到这里；或改成绝对路径，例如 /mnt/comics:/comics
       - ./comics:/comics
       - comic-data:/app/data
+    # 健康检查沿用镜像内置的 HEALTHCHECK（GET /healthz），此处不必重复定义
     restart: unless-stopped
 
 volumes:

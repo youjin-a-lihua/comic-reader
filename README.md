@@ -24,7 +24,24 @@
 
 ---
 
-## 部署（Docker Compose）
+## 部署
+
+### 方式一：用现成镜像（多架构，推荐）
+
+每次推送到 `main` 或打 `v*` 标签，GitHub Actions 都会构建 `linux/amd64` + `linux/arm64` 镜像并推到 GHCR。
+
+```bash
+docker run -d --name comic-reader \
+  -p 3000:3000 \
+  -e TZ=Asia/Shanghai \
+  -v /你的/漫画目录:/comics \
+  -v comic-data:/app/data \
+  ghcr.io/youjin-a-lihua/comic-reader:latest
+```
+
+> 首次使用前，需要在 GitHub 仓库的 **Packages** 设置里把 `comic-reader` 包可见性改为 **Public**（GHCR 默认私有），否则匿名拉取会 401。私有拉取则先 `echo $GITHUB_TOKEN | docker login ghcr.io -u <用户名> --password-stdin`。
+
+### 方式二：本地构建（改动后可立即验证）
 
 ```bash
 git clone https://github.com/youjin-a-lihua/comic-reader.git
@@ -37,9 +54,41 @@ docker compose up -d --build
 
 打开 `http://<你的服务器IP>:3000`。首次登录的账号自动成为管理员，其他用户之后可在「我的」里添加。
 
-数据（用户、书架、JWT 密钥、AstrBot 配置）持久化在 `comic-data` 卷里，重启不丢。
+数据（用户、书架、JWT 密钥、批注等）持久化在 `comic-data` 卷里，重启不丢。
 
-### 不用 Compose，直接 docker run
+### 文件权限（最常见的部署坑）
+
+容器以 `node`（uid 1000）运行，**必须能读漫画目录、能写数据目录**：
+
+```bash
+# 让容器用户拥有数据目录，并对漫画目录至少有读权限
+sudo chown -R 1000:1000 ./comic-data-root
+sudo chmod -R a+rX /你的/漫画目录
+```
+
+想换成宿主机的其他用户，用 compose 的 `user: "你的uid:你的gid"`，或 `docker run --user $(id -u):$(id -g)`。
+权限不对时的典型表现：封面生成报 `EACCES`、进度保存失败、日志里出现 `EROFS`/`Permission denied`。
+
+### 健康检查
+
+镜像自带 `HEALTHCHECK`，探测 `GET /healthz`（不鉴权、不扫盘）：
+
+```bash
+docker inspect --format '{{.State.Health.Status}}' comic-reader   # healthy
+curl -s http://127.0.0.1:3000/healthz
+# {"ok":true,"version":"1.5.0","uptime":12,"scanReady":true,"online":false}
+```
+
+### 升级
+
+```bash
+docker compose pull && docker compose up -d      # 或 docker pull + docker rm -f + docker run
+```
+
+数据卷无需迁移：`DATA_DIR` 里的 JSON 是向后兼容的，新版本会直接读取旧数据。
+升级前备份 `comic-data` 卷即可（`docker run --rm -v comic-data:/d -v $PWD:/b alpine tar czf /b/data.tgz -C /d .`）。
+
+### 不用 Compose，直接 docker run（本地构建版）
 
 ```bash
 docker build -t comic-reader .
@@ -159,6 +208,19 @@ npm start            # 或 npm run dev（热重载）；默认监听 http://loca
 - EPUB 复用 zip 句柄（按总字节淘汰）：132MB 的书重复读 62ms → 1ms，插图 ×10 677ms → 1ms。
 - `/api/library` 的封面存在性检查改为目录索引（一次 `readdir` + Set 查找）：1654 本冷启动 831ms 同步阻塞 → 约 10ms。
 - 全库扫描加 in-flight 去重；ETag 改用内容指纹（id+mtime+size），库未变时不再每 10 分钟让客户端重下整份书库。
+
+**性能**
+- EPUB 复用 zip 句柄（按总字节淘汰）：132MB 的书重复读 62ms → 1ms，插图 ×10 677ms → 1ms。
+- `/api/library` 的封面存在性检查改为目录索引（一次 `readdir` + Set 查找）：1654 本冷启动 831ms 同步阻塞 → 约 10ms。
+- 全库扫描加 in-flight 去重；ETag 改用内容指纹（id+mtime+size），库未变时不再每 10 分钟让客户端重下整份书库。
+
+**镜像与可移植性**
+- 基础镜像 `node:20`（Debian，1.28GB）→ `node:22-alpine`，镜像体积 **1.28GB → 305MB**；改用 `npm ci` + 锁文件，构建可复现。
+- 镜像内置 `bsdtar`（libarchive-tools）。此前镜像里并没有 `unrar`，而 `lib/cbz.js` 只认 `unrar` —— **README 承诺的 CBR 在容器里其实一直不可用**。现在缺 `unrar` 时自动回退 bsdtar（支持 RAR / RAR5）。
+- 新增 `GET /healthz`（不鉴权、不扫盘、不碰 JWT）+ Dockerfile `HEALTHCHECK`，compose / K8s / 反向代理可直接探活。
+- 新增 GitHub Actions：推送 `main` 或 `v*` 标签时自动构建 `linux/amd64` + `linux/arm64` 并发布到 GHCR。
+- `.dockerignore` 排除 `testdata`（55MB 样本），构建上下文 58MB → 2.5MB。
+- compose 补 `TZ`、`DECRYPT_PASSWORD`、镜像引用与 `user:` 权限提示；README 增加文件权限、健康检查、升级与备份说明。
 
 ### v1.4.7 (2026-10-01)
 

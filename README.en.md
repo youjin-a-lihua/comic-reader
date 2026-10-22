@@ -161,6 +161,19 @@ Requires Node.js ≥ 20. `sharp` installs from a prebuilt binary, so no local to
 - `/api/library` cover existence now uses a directory index (one `readdir` + Set lookup): 1654 books went from 831ms of blocking `existsSync` to ~10ms.
 - Whole-library scans are de-duplicated in flight; the ETag now uses a content fingerprint (id+mtime+size) so clients stop re-downloading the full library every 10 minutes.
 
+**Performance**
+- EPUB reuses zip handles (evicted by total bytes): repeat read on a 132MB book 62ms → 1ms, 10 image loads 677ms → 1ms.
+- `/api/library` cover existence now uses a directory index (one `readdir` + Set lookup): 1654 books went from 831ms of blocking `existsSync` to ~10ms.
+- Whole-library scans are de-duplicated in flight; the ETag now uses a content fingerprint (id+mtime+size) so clients stop re-downloading the full library every 10 minutes.
+
+**Image & portability**
+- Base image `node:20` (Debian, 1.28GB) → `node:22-alpine`, image size **1.28GB → 305MB**; switched to `npm ci` with the lockfile for reproducible builds.
+- The image now ships `bsdtar` (libarchive-tools). It previously had no `unrar` while `lib/cbz.js` only knew `unrar` — so **CBR, as advertised, never actually worked in the container**. It now falls back to bsdtar (RAR / RAR5).
+- Added `GET /healthz` (unauthenticated, no scan, no JWT work) plus a Dockerfile `HEALTHCHECK`, so compose / K8s / reverse proxies can probe the service.
+- Added GitHub Actions: pushes to `main` or `v*` tags build `linux/amd64` + `linux/arm64` and publish to GHCR.
+- `.dockerignore` now excludes `testdata` (55MB of samples): build context 58MB → 2.5MB.
+- Compose gained `TZ`, `DECRYPT_PASSWORD`, a published-image reference and a `user:` hint; the README documents permissions, health checks, upgrades and backups.
+
 ### v1.4.7 (2026-10-01)
 
 **Fix**

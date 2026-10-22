@@ -1609,6 +1609,23 @@ app.get('/api/ranking', authMiddleware, async (req, res) => {
   res.json({ weekly, allTime });
 });
 
+// Health probe for Docker/K8s/reverse proxies.
+// Deliberately unauthenticated and side-effect free: no scan, no disk touch, no JWT work.
+// `scanReady` tells a load balancer whether the first library scan has completed.
+let _appVersion = '';
+try { _appVersion = require('./package.json').version || ''; } catch { /* 版本号仅用于展示 */ }
+
+app.get('/healthz', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    ok: true,
+    version: _appVersion,
+    uptime: Math.round(process.uptime()),
+    scanReady: !!_scanCache,
+    online: onlineSources.isEnabled ? !!onlineSources.isEnabled() : false
+  });
+});
+
 app.get('/', async (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, 'login.html'));
 });

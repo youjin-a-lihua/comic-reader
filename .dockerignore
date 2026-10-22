@@ -1,8 +1,18 @@
 node_modules
 npm-debug.log*
 .git
+.github
 .env
+.env.*
+!.env.example
 data
 comics
+
+# 测试样本（含 55MB PDF），只用于本地验收，不该进镜像
+testdata
+
+# 打包与备份产物
 app.tar.gz
 backup_*
+*.tar
+*.tar.gz

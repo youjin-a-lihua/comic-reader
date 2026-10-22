@@ -7,15 +7,13 @@ let pdfDoc = null;
 let pdfState = null;
 
 async function openReader(comic, startPage) {
-  // 先作废上一次「快速退出」排队的收尾，否则它会在本书渲染完后把容器隐藏掉
   if (typeof window.__cancelReaderTeardown === 'function') window.__cancelReaderTeardown();
-  // Destroy any leftover pdf.js document first, or loadPdfPage silently reuses the previous book.
+// Destroy any leftover pdf.js document first, or loadPdfPage silently reuses the previous book.
   releasePdfDoc();
 
   if (comic.ext === 'epub') {
     return openEpubReader(comic);
   }
-  // 只在真的要读 PDF 时才去拉 pdf.js（loadPdfPage 里已有等待循环兜底）
   if (comic.ext === 'pdf') ensurePdfJs();
   try { history.pushState(null, '', '#reader/' + encodeURIComponent(String(comic.sourceId || comic.id))); } catch (e) {}
 
@@ -195,10 +193,7 @@ async function loadPdfPage(pageNum, mode) {
   }
 }
 
-// ── 相邻页预加载 ──────────────────────────────────────
-// 原来每次翻页都是「取页 → 渲染」串行，移动端一页要 300~800ms 白屏。
-// 这里把下一页提前渲染成离屏 canvas 存起来，翻页时直接挂上去。
-// 缓存键带上「缩放 + 视口尺寸」，旋转屏幕/改缩放会自然失效，不会拿到错尺寸的图。
+// Pre-render the next page into an offscreen canvas; the cache key includes zoom and viewport so it self-invalidates.
 const pageCanvasCache = new Map();
 const _prefetching = new Set();
 
@@ -213,7 +208,7 @@ async function getPdfCanvas(pageNum, mode) {
   const key = pdfCacheKey(pageNum, mode);
   const hit = pageCanvasCache.get(key);
   if (hit) {
-    pageCanvasCache.delete(key);   // 消费掉：同一个 canvas 不能同时挂在两处
+    pageCanvasCache.delete(key);
     return hit;
   }
   const page = await pdfDoc.getPage(pageNum);
@@ -230,15 +225,14 @@ function prefetchPdfPage(pageNum, mode) {
     .then(p => renderPdfPageToCanvas(p, mode))
     .then(c => {
       pageCanvasCache.set(key, c);
-      // 只留 3 张：一张 A4 页在 DPR2 下约 20MB 显存，留多了反而把内存吃穿
+// Cap at 3 canvases: one A4 page at DPR2 is about 20MB of VRAM.
       while (pageCanvasCache.size > 3) pageCanvasCache.delete(pageCanvasCache.keys().next().value);
     })
     .catch(() => {})
     .finally(() => _prefetching.delete(key));
 }
 
-// CBZ/CBR 只要把图片 URL 提前塞给浏览器，翻页时就能直接命中 HTTP 缓存
-// （服务端已经给了 Cache-Control: max-age=86400）。
+// Preload the next image URLs; the server already sends max-age=86400.
 const _imgPreload = new Map();
 
 function preloadCbzPage(pageNum) {
@@ -263,8 +257,7 @@ function preloadCbzPage(pageNum) {
 async function renderPdfPageToCanvas(page, displayMode) {
   const viewportEl = document.getElementById('readerViewport');
   const rect = viewportEl.getBoundingClientRect();
-  // DPR 无上限会让旗舰机（DPR 3+）为一张 A4 扫描页开 3000×4000 的 canvas，
-  // 单页显存就 40MB+，滚动模式下几页同时存活足以把移动端 WebContent 撑爆。
+// Cap DPR at 2: a scan page at DPR3 allocates tens of MB of canvas.
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const maxW = displayMode === 'double' ? rect.width * 0.48 : rect.width;
   const maxH = rect.height;
@@ -328,7 +321,6 @@ async function loadCbzPage(pageNum) {
     }
   }
 
-  // 预取后两页（totalPages 已知后再调，越界会被拦）
   preloadCbzPage(pageNum + 1);
   preloadCbzPage(pageNum + 2);
 }
@@ -371,7 +363,7 @@ async function loadScrollMode() {
 
   if (loading) loading.style.display = 'none';
 
-  // Unload canvases far outside the viewport; hundreds of live pages will OOM a phone.
+// Unload canvases far outside the viewport; hundreds of live pages will OOM a phone.
   if (readerState.scrollObserver) readerState.scrollObserver.disconnect();
   readerState.scrollObserver = new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -416,8 +408,7 @@ async function loadScrollMode() {
     }, 600);
   }
 
-  // 每次进滚动模式都会重跑到这里，viewport 本身不重建，
-  // 不先摘掉旧监听就会越叠越多（切 10 次 = 10 个监听同时扫全页）。
+// The viewport survives re-entry; remove the old scroll listener or they stack.
   if (readerState._scrollProgressHandler) {
     viewport.removeEventListener('scroll', readerState._scrollProgressHandler);
   }
@@ -607,7 +598,7 @@ function toggleMode() {
   if (readerState.scrollObserver) readerState.scrollObserver.disconnect();
   readerState.renderedPages.clear();
 
-  // Reuse the loaded pdfDoc and redraw; resetting it re-downloads the entire PDF.
+// Reuse the loaded pdfDoc and redraw; resetting it re-downloads the entire PDF.
 
   updateModeBtn();
   buildReaderUI();
@@ -653,7 +644,7 @@ function showZoomIndicator(zoom) {
 
 // Destroy the document on close: dropping the reference keeps worker and chunks in memory.
 function releasePdfDoc() {
-  // 换书/关阅读器时把预渲染的 canvas 一起丢掉，否则显存会跟着「看过的书数」涨
+// Drop pre-rendered canvases on close, or VRAM grows with every book read.
   try { pageCanvasCache.clear(); } catch (e) {}
   try { _imgPreload.clear(); } catch (e) {}
   try { _prefetching.clear(); } catch (e) {}
@@ -901,9 +892,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// pdf.js is served locally first; the CDN fallback only matters when the NAS is offline.
-// 改成按需加载：原来脚本一加载就 import 352KB 的 pdf.min.mjs，
-// 而只看书架/只看小说的用户根本用不到，白白跟书库接口抢带宽。
+// Load pdf.js on demand: shelf users never need the 352KB module.
 let _pdfJsLoading = null;
 
 function ensurePdfJs() {
@@ -931,7 +920,7 @@ function ensurePdfJs() {
     })
     .catch(function (e) {
       console.error('[pdf.js] 加载彻底失败，PDF 将无法阅读：', e);
-      _pdfJsLoading = null;   // 允许下次重试
+      _pdfJsLoading = null;
       return null;
     });
   return _pdfJsLoading;

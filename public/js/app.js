@@ -90,7 +90,7 @@ async function loadAllData(force = false, targetTab) {
   showSkeleton('allGrid', 8);
 
   try {
-    // Fetch the library once and split by type locally; three requests transfer it twice.
+// Fetch the library once and split by type locally; three requests transfer it twice.
     const resAll = await ComicAPI.getLibrary(null, force);
     const seriesAll = resAll.series || [];
     allSeries.all = seriesAll;
@@ -144,7 +144,7 @@ async function switchTab(tab) {
 
 function switchPage(tab) {
   switchTab(tab);
-  // A detail page must start at the top, otherwise the cover animation lands off screen.
+// A detail page must start at the top, otherwise the cover animation lands off screen.
   if (tab === 'detail') window.scrollTo(0, 0);
   try {
     if (tab === 'detail' && currentDetailComic) {
@@ -242,7 +242,7 @@ function renderGrid(gridId, continueId, series) {
     html += `<div class="series-header"><h2>${escHtml(s.name)}</h2><span class="count">${s.count} 本</span></div>`;
     html += s.items.map((c, i) => renderComicCard(c, i * 0.03)).join('');
   }
-  // Release the previous grid's blob covers; leaked blobs are a common iOS OOM cause.
+// Release the previous grid's blob covers; leaked blobs are a common iOS OOM cause.
   grid.querySelectorAll('img').forEach(im => { if (im.src && im.src.indexOf('blob:') === 0) { try { URL.revokeObjectURL(im.src); } catch (e) {} } });
   grid.innerHTML = html;
   setTimeout(loadPdfCovers, 500);
@@ -300,7 +300,6 @@ function renderComicCard(comic, delay = 0) {
 }
 
 // The comic left the scan (deleted or renamed outside the app) but the record is kept,
-// so the user can see what happened instead of finding the entry silently gone.
 function showMissingComicTip(id) {
   const stored = (window._missingNames || {})[id];
   confirm('《' + (stored || id) + '》对应的文件已不在书库中。\n\n可能被删除、移动或改名。记录仍为你保留，可在「个人」页或管理后台清理。');
@@ -340,7 +339,7 @@ async function deleteComic(id) {
     .find(c => c.id === id);
   const name = comic ? comic.name : id;
 
-  // Ask the server what this delete touches, so the confirm prompt can name the affected users.
+// Ask the server what this delete touches, so the confirm prompt can name the affected users.
   let impact = null;
   try {
     const r = await api('/api/comic/' + encodeURIComponent(id) + '/impact');
@@ -425,7 +424,6 @@ function applyFilters() {
   renderAllGrid();
 }
 
-// 全库页网格：按系列分组（默认）或按 mtime 降序（时间模式），并应用当前筛选
 function renderAllGrid() {
   document.querySelectorAll('#page-all .sort-chip').forEach(b => b.classList.toggle('active', b.dataset.sort === allSortMode));
   let filtered = allSeries.all.flatMap(s => s.items);
@@ -440,12 +438,10 @@ function renderAllGrid() {
     renderGrid('allGrid', 'continueAll', [{ name: '', count: filtered.length, items: filtered }]);
     return;
   }
-  // 平铺模式：不按 series 分组，按时间倒序显示所有漫画
   filtered = filtered.sort((a, b) => (new Date(b.mtime || 0) - new Date(a.mtime || 0)));
   renderGrid('allGrid', 'continueAll', [{ name: '', count: filtered.length, items: filtered }]);
 }
 
-// 最近添加
 function showRecentSection(items, label) {
   const pageAll = document.getElementById('page-all');
   if (!pageAll) return;
@@ -464,7 +460,6 @@ function showRecentSection(items, label) {
   setTimeout(loadPdfCovers, 300);
 }
 
-// 排行榜
 let rankData = null;
 let rankMode = 'weekly';
 
@@ -499,14 +494,12 @@ function renderRanking() {
     </div>`).join('');
 }
 
-// 爱心（在阅读器调用）
 async function toggleLikeFromReader(comicId) {
   try {
     await fetch(`/api/comic/${comicId}/like`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` } });
   } catch {}
 }
 
-// 搜索
 let searchTimer = null;
 let recentSearches = JSON.parse(localStorage.getItem('fn_recent_searches') || '[]');
 
@@ -565,7 +558,6 @@ async function performSearch(q) {
   }
 }
 
-// 自定义书架
 async function loadShelves() {
   try {
     userShelves = await ComicAPI.getShelves();
@@ -618,16 +610,11 @@ async function openShelf(id) {
   } catch {}
 }
 
-// 收藏切换
 async function toggleBookmarkComic(id) {
   await ComicAPI.toggleBookmark(id);
   await loadAllData();
 }
 
-// 打开漫画
-// 点开漫画 → 进入详情/系列枢纽页（而非直接进阅读器），
-// 形成「书架 → 详情 → 阅读器」的自然返回栈。
-// FLIP 共享元素状态
 let flipSourceCard = null;
 
 function openComicById(id, triggerEl) {
@@ -635,7 +622,6 @@ function openComicById(id, triggerEl) {
   const comic = flat.find(c => c.id === id);
   if (!comic) return;
 
-  // 1. 获取源卡片与初始尺寸
   let srcCard = triggerEl ? triggerEl.closest('.manga-card') : null;
   if (!srcCard) {
     srcCard = document.querySelector(`.manga-card[onclick*="'${id}'"]`);
@@ -648,18 +634,15 @@ function openComicById(id, triggerEl) {
     firstRect = imgEl.getBoundingClientRect();
   }
 
-  // 2. 记录浏览与返回位置
   fetch(`/api/comic/${id}/view`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` } }).catch(() => {});
   detailBackPage = currentTab || 'comic';
   detailBackTag = selectedTag;
   detailBackScroll = window.scrollY || document.documentElement.scrollTop || 0;
   currentDetailComic = comic;
 
-  // 3. 挂载详情页
   renderDetail(comic);
   switchPage('detail');
 
-  // 4. 执行 FLIP 展开飞入
   if (firstRect && firstRect.width > 0) {
     requestAnimationFrame(() => {
       const destCover = document.querySelector('#page-detail .detail-cover');
@@ -683,7 +666,6 @@ function runFlipAnimation(firstRect, lastRect, coverUrl, destElement) {
   ghost.style.borderRadius = '12px';
   document.body.appendChild(ghost);
 
-  // 强制同步重排，确保初始状态落盘
   ghost.getBoundingClientRect();
 
   ghost.style.transform = `translate3d(${lastRect.left - firstRect.left}px, ${lastRect.top - firstRect.top}px, 0)`;
@@ -714,7 +696,6 @@ function showDetailBack() {
   executeNormalBack(() => {
     requestAnimationFrame(() => {
       const lastRect = destCard.getBoundingClientRect();
-      // 容错：若返回时目标卡片在视口外，直接静默退出
       if (lastRect.bottom < 0 || lastRect.top > window.innerHeight) {
         flipSourceCard = null;
         return;
@@ -766,13 +747,11 @@ function executeNormalBack(callback) {
   detailBackScroll = 0;
 }
 
-// 从详情页 / 继续阅读 直达阅读器
 function openReaderById(id) {
   const flat = allSeriesArrays().flatMap(s => s.flatMap(x => x.items));
   let comic = flat.find(c => String(c.sourceId) === String(id));
   if (!comic) comic = flat.find(c => String(c.id) === String(id));
   if (!comic) return;
-  // 记录返回位置（从哪个 tab / 标签视图 / 滚动位置点开的），退出后能回到原位
   if (currentTab !== 'detail') {
     detailBackPage = currentTab || 'comic';
     detailBackTag = selectedTag;
@@ -781,7 +760,6 @@ function openReaderById(id) {
   openReader(comic);
 }
 
-// 找到包含该漫画的系列（用于列出同系列其他卷）
 function findSeriesOf(comic) {
   for (const key of Object.keys(allSeries)) {
     for (const s of allSeries[key]) {
@@ -791,7 +769,6 @@ function findSeriesOf(comic) {
   return null;
 }
 
-// 渲染详情 / 系列枢纽页
 function renderDetail(comic) {
   const series = findSeriesOf(comic);
   const siblings = (series && series.items) ? series.items : [comic];
@@ -851,7 +828,6 @@ function renderDetail(comic) {
     html += '</div>';
   }
 
-  // 评论区
   html += `
     <div class="detail-section-title">评论区<span class="count">聊聊这本</span></div>
     <div class="comment-box">
@@ -868,13 +844,11 @@ function renderDetail(comic) {
   loadComments(comic.id);
 }
 
-// 阅读器退出后回到详情页（同系列）
 function showDetailForComic(id) {
   const flat = allSeriesArrays().flatMap(s => s.flatMap(x => x.items));
   let comic = flat.find(c => String(c.sourceId) === String(id));
   if (!comic) comic = flat.find(c => String(c.id) === String(id));
   if (!comic) {
-    // 数据未就绪时回退到点开前的页面（不默认回漫画主界面）
     switchPage(detailBackPage || 'comic');
     return;
   }
@@ -883,8 +857,6 @@ function showDetailForComic(id) {
   switchPage('detail');
 }
 
-// 详情页返回到来源书架页
-// 安卓返回键统一走此栈：阅读器 → 详情页 → 书架
 window.fnComicBack = function () {
   const readerEl = document.getElementById('reader');
   if (readerEl && readerEl.style.display !== 'none') {
@@ -899,9 +871,8 @@ window.fnComicBack = function () {
   return 'exit';
 };
 
-function loadLibraryData() { loadAllData(); } // reader 回调
+function loadLibraryData() { loadAllData(); }
 
-// 标签云（漫画页顶部快速筛选，可折叠区块头）
 function renderTagCloud() {
   const cloud = document.getElementById('filterChips');
   if (!cloud) return;
@@ -1041,7 +1012,7 @@ function renderComicGridByTag() {
           .sort((a, b) => (new Date(b.mtime || 0) - new Date(a.mtime || 0)))
           .slice(0, MAX_PER_TAG)
       }));
-    // Books with no tags fall into no group at all, so collect them as "uncategorised".
+// Books with no tags fall into no group at all, so collect them as "uncategorised".
     const taggedIds = new Set();
     for (const arr of Object.values(tagGroups)) for (const c of arr) taggedIds.add(c.id);
     const untagged = comics.filter(c => !taggedIds.has(c.id));
@@ -1444,7 +1415,7 @@ async function renderProfile() {
 function renderProfileContent(container, bookmarks, recent, downloads) {
   let html = '';
 
-  // Names for the "file is gone" prompt. Both lists may hold records with no comic behind them.
+// Names for the "file is gone" prompt. Both lists may hold records with no comic behind them.
   window._missingNames = {};
   for (const c of [...bookmarks, ...recent]) if (c.missing && c.name) window._missingNames[c.id] = c.name;
 
@@ -1825,10 +1796,7 @@ function renderGrid(gridId, continueId, series) {
     return;
   }
 
-  // 窗口化渲染：同一时刻只保留有限卡片在 DOM，滚动到哪渲染到哪
-  // iOS Safari 单标签页内存预算极低，一次性把整库 577 张卡片塞进 DOM，
-  // 会在切换标签时叠加第二个整库网格 → WebContent 被系统杀掉（"网页将重新载入"）。
-  // 窗口化后 DOM 卡片数恒定（≈GRID_BATCH），对 Library 大小完全免疫。
+// Windowed rendering: keep a constant DOM budget; rendering the whole library OOMs iOS Safari.
   if (grid._gridObserver) { try { grid._gridObserver.disconnect(); } catch (e) {} grid._gridObserver = null; }
   grid.classList.add('series-container');
   const ctx = gridId.replace('Grid', '').replace('continue', '');
@@ -1848,8 +1816,6 @@ function renderGrid(gridId, continueId, series) {
   appendGridBatch(grid);
 }
 
-// 窗口化追加一批（GRID_BATCH 张）。跨系列连续渲染；系列被截断时，下一批从该系列
-// 已有的 .series-grid 继续追加，不重复开节头。折叠的系列跳过渲染，展开时再按需填充。
 function appendGridBatch(grid) {
   const GRID_BATCH = 60;
   const st = grid._gstate;
@@ -1861,7 +1827,6 @@ function appendGridBatch(grid) {
     if (f.sid !== st.openSid) {
       st.openSid = f.sid;
       if (s.name === '') {
-        // flat：不显示系列名分组头，直接平铺卡片
         const flatBody = document.createElement('div');
         flatBody.className = 'series-body';
         flatBody.innerHTML = '<div class="series-grid"></div>';
@@ -1895,7 +1860,7 @@ function appendGridBatch(grid) {
     }
     st.pos++; n++;
   }
-  // iOS OOM 防护：仅分块模式（多 series-section）回收视口上方整块；flat 单组不删卡片
+// Only the chunked mode reclaims offscreen sections; the flat list keeps every card.
   try {
     if (st.series.length > 1) {
       const vh = window.innerHeight || 800;
@@ -1922,7 +1887,6 @@ function appendGridBatch(grid) {
   if (typeof loadPdfCovers === 'function') setTimeout(loadPdfCovers, 50);
 }
 
-// 抽离单卡片渲染函数，复用于 renderGrid 与 renderComicGridByTag，修复 P0-3 与 P1-3
 function renderSingleMangaCard(comic, index = 0) {
   const meta = parseMangaMeta(comic.name);
   const authorStr = (comic.authors && comic.authors.length > 0) ? comic.authors.slice(0, 2).join('、') : meta.author;
@@ -1944,9 +1908,7 @@ function renderSingleMangaCard(comic, index = 0) {
   </div>`;
 }
 
-// 修复 P1-1：同步更新漫画页按标签筛选的网格渲染
 function renderComicGridByTag() {
-  // 同步排序切换条的选中态
   document.querySelectorAll('#page-comic .sort-chip').forEach(b => b.classList.toggle('active', b.dataset.sort === comicSortMode));
   let comics;
   if (!selectedTag) {
@@ -1958,7 +1920,6 @@ function renderComicGridByTag() {
     renderGrid('comicGrid', 'continueComic', [{ name: '', count: 0, items: [] }]);
     return;
   }
-  // 按标签分组：每个标签一个区块，块内平铺该标签的本子
   const tagGroups = {};
   for (const c of comics) {
     const seen = new Set();
@@ -1969,11 +1930,10 @@ function renderComicGridByTag() {
       tagGroups[t].push(c);
     }
   }
-  const MAX_PER_TAG = 60; // 每块最多显示最新60本，避免超长列表卡顿
-  const MIN_COUNT = 2;    // 过滤只有1本的冷门标签
+  const MAX_PER_TAG = 60;
+  const MIN_COUNT = 2;
   let series;
   if (selectedTag) {
-    // 单标签全量视图：不截断，窗口化滚动加载全部
     series = [{
       name: selectedTag,
       tag: selectedTag,
@@ -1995,12 +1955,6 @@ function renderComicGridByTag() {
           .sort((a, b) => (new Date(b.mtime || 0) - new Date(a.mtime || 0)))
           .slice(0, MAX_PER_TAG)
       }));
-    /* 【2026-09-23 修复】把「没有任何标签」的书归入「未分类」组。
-       原逻辑只对有标签的书分组，无标签的书（tags: []）进不了任何组，
-       而 fallback（series.length===0 才显示全部）在本库永远不触发
-       （库里有上千本带「中文」等标签的书），
-       导致无标签的书在「漫画」tab 完全不可见 —— 只能去「全库」找。
-       实测本库有 170+ 本属于这种情况。 */
     const taggedIds = new Set();
     for (const arr of Object.values(tagGroups)) for (const c of arr) taggedIds.add(c.id);
     const untagged = comics.filter(c => !taggedIds.has(c.id));
@@ -2023,7 +1977,6 @@ function renderComicGridByTag() {
   renderGrid('comicGrid', 'continueComic', series);
 }
 
-// 小说页标签云（可折叠，可筛选）
 function renderNovelTagCloud() {
   const cloud = document.getElementById('filterChipsNovel');
   if (!cloud) return;
@@ -2064,7 +2017,6 @@ function clearNovelTagFilter() {
   renderNovelGridByTag();
 }
 function renderNovelGridByTag() {
-  // 同步排序切换条的选中态
   document.querySelectorAll('#page-novel .sort-chip').forEach(b => b.classList.toggle('active', b.dataset.sort === novelSortMode));
   let series;
   if (!selectedNovelTag) {
@@ -2075,23 +2027,20 @@ function renderNovelGridByTag() {
       items: s.items.filter(c => (c.tags || []).includes(selectedNovelTag))
     })).filter(s => s.items.length > 0);
   }
-  // 平铺模式：不按 series 分组，直接按时间倒序显示
   const flat = series.flatMap(s => s.items)
     .sort((a, b) => (new Date(b.mtime || 0) - new Date(a.mtime || 0)));
   renderGrid('novelGrid', 'continueNovel', [{ name: '', count: flat.length, items: flat }]);
 }
 
-// 在线模块（禁漫天堂：搜索 / 详情 / 在线阅读）
 let currentOnlinePage = 1;
 let currentOnlineKeyword = '';
 let currentOnlineMaxPage = 1;
 let currentOnlineOrder = 'mr';
-let currentOnlineSource = ''; // 当前选中的在线源 key（用于 album/chapter/img 路由）
+let currentOnlineSource = '';
 
 function populateOnlineSources() {
   const sel = document.getElementById('onlineSourceSelect');
   if (!sel) return;
-  // 从 /api/online/sources 拉取已启用源列表
   api('/api/online/sources').then(async res => {
     const data = await res.json().catch(() => ({ sources: [] }));
     const list = (data.sources || []);
@@ -2106,7 +2055,7 @@ function populateOnlineSources() {
       sel.style.display = 'none';
       currentOnlineSource = list.length ? list[0].key : '';
     }
-  }).catch(() => { /* 拉取失败不影响其余功能 */ });
+  }).catch(() => {  });
 }
 
 function onOnlineSourceChange() {
@@ -2114,7 +2063,6 @@ function onOnlineSourceChange() {
   if (sel) currentOnlineSource = sel.value;
 }
 
-// 在线图片走代理，统一加 token 与 source（source 缺省时由后端按 URL 自动路由）
 function onlineImgUrl(rawUrl) {
   const src = currentOnlineSource ? `&source=${encodeURIComponent(currentOnlineSource)}` : '';
   return `/api/online/img?url=${encodeURIComponent(rawUrl)}&token=${encodeURIComponent(getToken())}${src}`;
@@ -2222,7 +2170,7 @@ async function onlineOpenAlbum(id, source) {
 
 function renderOnlineDetail(a) {
   if (a._source) currentOnlineSource = a._source;
-  currentOnlineAlbum = a; // 供「下载到库」复用（标题/作者/标签/源）
+  currentOnlineAlbum = a;
   const cover = a.cover ? onlineImgUrl(a.cover) : '';
   const tags = [].concat(a.tags && a.tags.author || [], a.tags && a.tags.tags || [], a.tags && a.tags.works || [], a.tags && a.tags.actors || []);
   const tagHtml = tags.map(t => `<span class="detail-tag">${escHtml(t)}</span>`).join('');
@@ -2293,13 +2241,10 @@ async function onlineOpenChapter(epId, title, chapterTitle, source) {
   }
 }
 
-// 在线章节 → 本地库（下载/入库）
-// 在线阅读逐张走代理，慢且受源站可用性影响；下载入库后可走本地 PDF 通道高速阅读。
 let currentOnlineAlbum = null;
 let _dlJobId = null;
 let _dlTimer = null;
 
-// 详情页：下载整本
 function dlOnlineAlbum() {
   const a = currentOnlineAlbum;
   if (!a) return;
@@ -2308,13 +2253,11 @@ function dlOnlineAlbum() {
   startOnlineDownload(a.title, eps, a);
 }
 
-// 详情页：下载单话
 function dlOnlineChapter(epId, epTitle) {
   const a = currentOnlineAlbum;
   startOnlineDownload(a ? a.title : epTitle, [{ id: epId, title: epTitle || '' }], a || {});
 }
 
-// 阅读器内：下载当前正在看的一话
 function dlCurrentOnlineChapter() {
   if (typeof readerState === 'undefined' || !readerState || !readerState.comic) return;
   const c = readerState.comic;
@@ -2366,7 +2309,7 @@ function pollDownload(jobId) {
       stopDlPoll();
       if (_dlDoneResolve) { const _r = _dlDoneResolve; _dlDoneResolve = null; _r(); }
       toast(ico('check-circle') + ' 已入库：' + (j.files || []).join('、'));
-      loadAllData(true, currentTab);   // 强制刷新库，新书立刻可见
+      loadAllData(true, currentTab);
       setTimeout(dlModalHide, 2200);
     } else if (j.status === 'error') {
       stopDlPoll();
@@ -2382,7 +2325,6 @@ function stopDlPoll() {
   _dlJobId = null;
 }
 
-// 下载进度弹窗（动态创建，避免改动挂载的 index.html）
 function dlModalEnsure() {
   let m = document.getElementById('dlModal');
   if (m) return m;
@@ -2434,7 +2376,6 @@ function dlModalHide() {
   if (m) m.style.display = 'none';
 }
 
-// hash 路由（2026-09-02）
 function applyRoute(hash) {
   const h = (hash || '').replace(/^#/, '');
   if (!h) { switchPage('comic'); return; }
@@ -2465,7 +2406,6 @@ if (document.readyState === 'loading') {
   setTimeout(function () { applyRoute(location.hash); }, 200);
 }
 
-// 动量追踪器
 function attachHorizontalScrollPhysics() {
   const scroller = document.querySelector('.rec-scroll');
   if (!scroller || scroller._hasPhysics) return;
@@ -2479,7 +2419,7 @@ function attachHorizontalScrollPhysics() {
 
   function updatePhysics() {
     currentTilt += (velocity - currentTilt) * 0.15;
-    velocity *= 0.82; // 动量摩擦衰减系数
+    velocity *= 0.82;
 
     const clampedTilt = Math.abs(currentTilt) < 0.05 ? 0 : Math.max(-15, Math.min(15, currentTilt));
     scroller.style.setProperty('--scroll-tilt', `${clampedTilt.toFixed(2)}deg`);
@@ -2512,35 +2452,28 @@ function attachHorizontalScrollPhysics() {
   }, { passive: true });
 }
 
-/* 阅读器返回体验增强：视觉瞬时退出 + 显存异步回收 */
-// 递增令牌：teardown 执行前若用户已打开另一本，则放弃本次收尾，避免误关新书
 let _closeReaderToken = 0;
 
 function closeReaderFast() {
   const readerEl = document.getElementById('reader');
   if (!readerEl || readerEl.style.display === 'none') return;
 
-  // 阶段 1 (0ms 第一帧)：立即切断视觉并屏蔽交互，无缝透出底层书架
   readerEl.classList.add('exiting');
   removeFloatingBackButton();
 
-  // 退出全屏状态（若处于全屏模式）
   if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
   }
 
-  // 触发内存级进度局部更新（禁止整库 reload）
   if (typeof updateLocalProgressAfterRead === 'function') {
     updateLocalProgressAfterRead();
   }
 
   const token = ++_closeReaderToken;
 
-  // 阶段 2 (延后 150ms / 空闲周期)：卸载 Canvas + 复用核心 closeReader 收尾
   const teardown = () => {
-    if (token !== _closeReaderToken) return; // 期间已打开新阅读器，放弃本次收尾
+    if (token !== _closeReaderToken) return;
 
-    // 释放阅读器已持有的 canvas 显存
     readerEl.querySelectorAll('canvas').forEach(cv => {
       cv.width = 1;
       cv.height = 1;
@@ -2548,14 +2481,9 @@ function closeReaderFast() {
       if (ctx) ctx.clearRect(0, 0, 1, 1);
     });
 
-    // 复用 reader.js 的核心 closeReader，完成
-    //   pdfDoc.destroy() + readerState 重置 + 进度保存 + 路由修正 + 回详情/书架。
-    //   早期实现只做视觉隐藏，状态常驻 → 下一本复用上一本的 PDF 文档（「看完一本看不了下一本」）。
-    //   注意：app.js 先于 reader.js 加载，故此处运行时通过 window.__coreCloseReader 取。
     if (typeof window.__coreCloseReader === 'function') {
       window.__coreCloseReader();
     }
-    // 清除动画态（核心逻辑不认识 .exiting）
     readerEl.classList.remove('exiting');
     readerEl.style.display = 'none';
   };
@@ -2567,35 +2495,27 @@ function closeReaderFast() {
   }
 }
 
-// 覆盖旧有的 closeReader 接口，保持对外兼容
 window.closeReader = closeReaderFast;
-// 打开新书时必须作废上一次 closeReaderFast 排队的收尾任务。
-// 令牌只在 closeReaderFast 里自增，而收尾是 setTimeout + requestIdleCallback 异步执行的：
-// 「返回书架 → 立刻点另一本」时，旧收尾会在新书已经渲染好之后才跑，
-// 把新阅读器 display:none 掉（表现为点进去一片空白，只能再退一次）。
+// Bump the token when a new book opens, or the deferred teardown hides the new reader.
 window.__cancelReaderTeardown = function () { _closeReaderToken++; };
-// 物理手势与 popstate 极速拦截
 window.addEventListener('popstate', (e) => {
   const readerEl = document.getElementById('reader');
   const isReaderActive = readerEl && readerEl.style.display !== 'none' && !readerEl.classList.contains('exiting');
 
-  // 如果当前处于阅读器状态，物理后退优先无感退出阅读器
   if (isReaderActive) {
     if (typeof closeReaderFast === 'function') {
       closeReaderFast();
     }
-    // 已完成退出，阻止后续冗余页面重刷
     return;
   }
 });
-// 内存级乐观更新进度，杜绝退出阅读器时全量触发 3 次 library API
+// Update progress in memory; a full reload fired three library API calls per close.
 function updateLocalProgressAfterRead() {
   if (!readerState || !readerState.comic) return;
   const cId = readerState.comic.id;
   const curPage = readerState.currentPage || 1;
   const total = readerState.totalPages || readerState.comic.pageCount || 1;
 
-  // 1. 遍历就地修改内存对象
   const all = allSeriesArrays().flatMap(s => (s.items || []));
   const target = all.find(c => c.id === cId || String(c.sourceId) === String(cId));
   if (target) {
@@ -2605,7 +2525,6 @@ function updateLocalProgressAfterRead() {
     target.progress.updatedAt = new Date().toISOString();
   }
 
-  // 2. 仅刷新“继续阅读”卡片，DOM 变动极小
   const flatComics = (allSeries[currentTab] || allSeries.comic || []).flatMap(s => s.items || []);
   const contId = currentTab === 'novel' ? 'continueNovel' : (currentTab === 'all' ? 'continueAll' : 'continueComic');
   const contEl = $(contId);
@@ -2622,7 +2541,6 @@ function updateLocalProgressAfterRead() {
     }
   }
 
-  // 3. 将同步请求降级为静默心跳上报
   fetch(`/api/comic/${cId}/progress`, {
     method: 'POST',
     headers: {
@@ -2632,15 +2550,9 @@ function updateLocalProgressAfterRead() {
     body: JSON.stringify({ page: curPage, totalPages: total })
   }).catch(() => {});
 }
-// 悬浮返回胶囊生命周期管理
 let _readerBackTimer = null;
 
 function ensureFloatingBackButton() {
-  /* 【2026-09-22 修正】
-     胶囊不是「重复按钮」，而是顶栏被折叠（点空白处会自动折叠）时**唯一的返回入口**。
-     上一版直接删掉它，导致顶栏一折叠用户就找不到返回键。
-     现改为「与顶栏互补」：顶栏可见时隐藏胶囊，顶栏折叠时才显示 —— 两者永不同时出现，
-     既不会有重叠的双 ← ，也不会在顶栏折叠后失去返回能力。 */
   let btn = document.getElementById('readerFloatingBack');
   if (!btn) {
     btn = document.createElement('button');
@@ -2655,9 +2567,6 @@ function ensureFloatingBackButton() {
     btn.onclick = (e) => {
       e.stopPropagation();
       e.preventDefault();
-      // 【2026-09-22】直接退出阅读器。原实现优先 history.back()，
-      // 在无历史条目（深链直开 / PWA 冷启）时毫无反应，用户以为按钮坏了。
-      // 用 closeReader() 归一，它内部已处理「在线→在线详情 / 本地→同系列详情」的分支。
       if (typeof closeReader === 'function') {
         closeReader();
       } else {
@@ -2666,17 +2575,11 @@ function ensureFloatingBackButton() {
     };
     document.body.appendChild(btn);
 
-    /* 【2026-09-22】移除旧的「闲置 3 秒转幽灵态 + 交互唤醒」逻辑：
-       它导致按钮看起来会自己消失/变淡；现在显隐完全由 setFloatingBackVisible 控制。 */
   }
 
   return btn;
 }
 
-/**
- * 【2026-09-22】按顶栏显隐状态同步胶囊：controlsVisible=true（顶栏在）→ 藏胶囊。
- * 由 reader.js 的控制栏切换逻辑调用，保证两者互斥显示。
- */
 function setFloatingBackVisible(visible) {
   clearTimeout(_readerBackTimer);
   if (visible) {
@@ -2695,8 +2598,6 @@ function setFloatingBackVisible(visible) {
 function removeFloatingBackButton() {
   clearTimeout(_readerBackTimer);
   const btn = document.getElementById('readerFloatingBack');
-  /* 【2026-09-22】改为真正移除节点。原来只 display:none，残留节点会被后续代码
-     或旧逻辑重新显示，造成「点一次消失、再进又出现」。 */
   if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
   else if (btn) btn.style.display = 'none';
 }

@@ -1,4 +1,4 @@
-// Express server: auth, library scan/cache, PDF/EPUB/CBZ/cover serving, bookmarks, annotations, admin API.
+// Express server: auth, library scan/cache, PDF/EPUB/CBZ/cover serving, bookmarks, annotations, admin.
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -184,8 +184,7 @@ let _scanCache = null;
 let _scanMap = null;
 let _scanTime = 0;
 let _scanVersion = 'init';
-// 在飞的扫描：首屏会并发打 /api/library、/api/continue、/api/ranking 等，
-// 没有这个锁时每个请求都会各自启动一次全库扫描。
+// Serialise concurrent scans: without this lock every first-page request rescans all libraries.
 let _scanPromise = null;
 const SCAN_CACHE_TTL = 600000;
 
@@ -206,7 +205,7 @@ async function runScan() {
       console.error(`[scan] 库 ${lib.path} 扫描失败:`, err.message);
     }
   }
-  // Prefer the sidecar-declared type over extension sniffing, so a PDF in the novel library stays a novel.
+// Prefer the sidecar-declared type over extension sniffing, so a PDF in the novel library stays a novel.
   for (const c of all) {
     c.type = (c.metaType === 'novel' || c.metaType === 'comic')
       ? c.metaType
@@ -219,9 +218,7 @@ async function runScan() {
     prewarm(freshComics).catch(e => console.error('[prewarm]', e && e.message));
   }
 
-  // 内容指纹：id + mtime + size，任一条目变化才算新版本。
-  // 之前 ETag 用的是 _scanTime，缓存每 10 分钟过期重扫一次就换了 ETag，
-  // 所有客户端都要把整份书库重新下一遍，哪怕内容一字未改。
+// ETag derives from content (id+mtime+size), not wall-clock: unchanged libraries keep their ETag.
   const ver = crypto.createHash('md5');
   for (const c of all) ver.update(c.id + ':' + c.mtime + ':' + c.size + ';');
   _scanVersion = ver.digest('hex').slice(0, 12);
@@ -237,14 +234,12 @@ async function scanAllLibs(force = false) {
   if (!force && _scanCache && (now - _scanTime) < SCAN_CACHE_TTL) return _scanCache;
 
   if (_scanPromise) {
-    // 非强制刷新：直接复用正在进行的扫描结果。
-    // 强制刷新（删除/新增库之后）：必须等它结束再自己扫一次，否则可能拿到
-    // 「删除之前」的旧列表，导致刚删的漫画又出现。
+// Non-forced refresh reuses the in-flight scan; a forced refresh waits and rescans so deletions take effect.
     if (!force) return _scanPromise;
-    try { await _scanPromise; } catch (e) { /* 让下面重新扫 */ }
+    try { await _scanPromise; } catch (e) {  }
   }
 
-  if (_scanPromise) return _scanPromise;   // 等待期间别人又起了扫描
+  if (_scanPromise) return _scanPromise;
   _scanPromise = runScan().finally(() => { _scanPromise = null; });
   return _scanPromise;
 }
@@ -266,8 +261,7 @@ app.get('/api/continue', authMiddleware, async (req, res) => {
   const items = getContinueReading(req.user.username);
   const comicMap = await getComicMap();
 
-  // Keep records whose comic is no longer in the scan: dropping them silently made
-  // reading history disappear whenever a file was deleted or renamed outside the app.
+// Keep records whose comic left the scan: dropping them made history vanish on external deletes.
   const result = items
     .map(item => {
       const comic = comicMap[item.id];
@@ -284,7 +278,7 @@ app.get('/api/bookmarks', authMiddleware, async (req, res) => {
   const items = getBookmarks(req.user.username);
   const comicMap = await getComicMap();
 
-  // Same as /api/continue: a bookmark must not vanish because the file was removed elsewhere.
+// Same as /api/continue: a bookmark must not vanish because the file was removed elsewhere.
   const result = items
     .map(item => {
       const comic = comicMap[item.id];
@@ -354,10 +348,10 @@ app.get('/api/comic/:id/file', authMiddleware, async (req, res) => {
   try { stat = fs.statSync(filePath); fileSize = stat.size; }
   catch { return res.status(404).json({ error: '文件已不存在，请刷新书架' }); }
 
-  // Files are decrypted when they enter the library; never decrypt a whole file inside the request path.
+// Files are decrypted when they enter the library; never decrypt a whole file inside the request path.
 
   const range = req.headers.range;
-  // Range must be validated: "bytes=abc-" parses to NaN and kills the connection.
+// Range must be validated: "bytes=abc-" parses to NaN and kills the connection.
   const m = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
   if (m) {
     let start = m[1] === '' ? NaN : parseInt(m[1], 10);
@@ -366,7 +360,7 @@ app.get('/api/comic/:id/file', authMiddleware, async (req, res) => {
     if (Number.isNaN(start) && Number.isNaN(end)) {
       return res.status(416).set('Content-Range', `bytes */${fileSize}`).end();
     }
-    if (Number.isNaN(start)) { // "bytes=-500" means the last 500 bytes.
+    if (Number.isNaN(start)) {
       start = Math.max(0, fileSize - end);
       end = fileSize - 1;
     } else if (Number.isNaN(end)) {
@@ -386,8 +380,7 @@ app.get('/api/comic/:id/file', authMiddleware, async (req, res) => {
     });
     const rs = fs.createReadStream(filePath, { start, end });
     rs.on('error', () => res.destroy());
-    // pdf.js 翻页会大量中断 Range 请求；客户端断开后必须主动 destroy 读流，
-    // 否则文件描述符要等 GC 才释放，长时间阅读可能 EMFILE。
+// Destroy the read stream on client abort: pdf.js aborts Range requests constantly and fds accumulate.
     res.on('close', () => rs.destroy());
     rs.pipe(res);
   } else {
@@ -499,7 +492,7 @@ app.get('/api/comic/:id/cover', authMiddleware, async (req, res) => {
   try {
     const coverPath = await generate(comic.path, comic.id);
     if (coverPath && fs.existsSync(coverPath)) {
-      // res.sendFile handles content-type, ETag/304 and Range for us.
+// res.sendFile handles content-type, ETag/304 and Range for us.
       return res.sendFile(coverPath, {
         maxAge: 31536000,
         immutable: true,
@@ -552,7 +545,6 @@ app.post('/api/comic/:id/bookmark', authMiddleware, async (req, res) => {
 });
 
 // Reports which users hold progress / bookmarks / likes / comments / shelf entries for a comic.
-// Its purpose is to warn before a delete, not to enforce anything.
 function impactOfDeletion(comicId, opts = {}) {
   const exclude = new Set(opts.excludeUsers || []);
   const affected = [];
@@ -607,7 +599,6 @@ function impactOfDeletion(comicId, opts = {}) {
 }
 
 // Collects progress / bookmark records whose comic is no longer in the scan.
-// Files deleted outside the app never reach the delete route, so those records are orphaned.
 async function collectOrphans() {
   const comicMap = await getComicMap();
   const all = readAllProgress();
@@ -640,8 +631,7 @@ async function deleteComicFully(comic) {
   } catch (e) { errors.push('本体: ' + e.message); }
 
   const primaryCover = path.join(path.dirname(comic.path), '.thumbnails', `${id}.jpg`);
-  // 兜底封面文件名是 md5(绝对路径) 前 16 位，不是漫画 id —— 之前按 `${id}.jpg`
-  // 删的是不存在的路径，所以每删一本就永久留下一个孤儿封面。
+// The fallback cover file name is md5(path), not the comic id; deleting by id never matched.
   const fallbackCover = coverCachePath(id, comic.path) || path.join(DATA_DIR, 'thumbnails', `${id}.jpg`);
   for (const f of [primaryCover, fallbackCover]) {
     try { await fs.promises.rm(f, { force: true }); } catch (e) {  }
@@ -697,8 +687,7 @@ app.delete('/api/comic/:id', authMiddleware, adminOnly, async (req, res) => {
   }
   const comic = await findComic(req.params.id);
   if (!comic) return res.status(404).json({ error: '漫画不存在' });
-  // The comic itself is already gone from the scan at this point, so count only the
-  // other users whose metadata this delete will affect.
+// The comic itself is already gone from the scan at this point, so count only the
   const impact = impactOfDeletion(req.params.id, { excludeUsers: [req.user.username] });
   const errors = await deleteComicFully(comic);
   audit.record({
@@ -914,10 +903,10 @@ app.get('/api/library', authMiddleware, async (req, res) => {
     const progress = getUserProgress(req.user.username);
 
     const progHash = crypto.createHash('md5').update(JSON.stringify(progress)).digest('hex').slice(0, 10);
-    // Hash the username: non-ASCII names cannot go into a header value, and this keeps the cache key per user.
+// Hash the username: non-ASCII names cannot go into a header value, and this keeps the cache key per user.
     const userKey = crypto.createHash('sha1').update(req.user.username).digest('hex').slice(0, 8);
     const etag = `W/"lib-${_scanVersion}-${userKey}-${typeFilter || 'all'}-${allComics.length}-${progHash}"`;
-    res.set('Cache-Control', 'no-cache'); // The cache bucket is per user, so switching accounts cannot reuse it.
+    res.set('Cache-Control', 'no-cache');
     res.set('Vary', 'Authorization');
     res.set('ETag', etag);
     if (req.headers['if-none-match'] === etag) return res.status(304).end();
@@ -999,7 +988,7 @@ app.get('/api/library', authMiddleware, async (req, res) => {
 const shelvesDir = path.join(DATA_DIR, 'shelves');
 
 function safeUserName(username) {
-  // Reject "../" in usernames, otherwise the file lands outside the data dir.
+// Reject "../" in usernames, otherwise the file lands outside the data dir.
   return String(username).replace(/[^\w.@-]/g, '_').slice(0, 64) || 'user';
 }
 function shelvesStore(username) {
@@ -1375,7 +1364,7 @@ function loadAstrbotConfig() {
 function saveAstrbotConfig(cfg) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const existing = loadAstrbotConfig();
-  // An empty password means "keep the current one".
+// An empty password means "keep the current one".
   const password = (cfg.password && cfg.password.length) ? cfg.password : (existing.password || '');
   fs.writeFileSync(astrbotConfigFile, JSON.stringify({
     address: (cfg.address || '').trim(),
@@ -1609,11 +1598,9 @@ app.get('/api/ranking', authMiddleware, async (req, res) => {
   res.json({ weekly, allTime });
 });
 
-// Health probe for Docker/K8s/reverse proxies.
-// Deliberately unauthenticated and side-effect free: no scan, no disk touch, no JWT work.
-// `scanReady` tells a load balancer whether the first library scan has completed.
+// Health probe for Docker/K8s/reverse proxies: unauthenticated and side-effect free.
 let _appVersion = '';
-try { _appVersion = require('./package.json').version || ''; } catch { /* 版本号仅用于展示 */ }
+try { _appVersion = require('./package.json').version || ''; } catch {  }
 
 app.get('/healthz', (req, res) => {
   res.set('Cache-Control', 'no-store');

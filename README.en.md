@@ -142,6 +142,25 @@ Requires Node.js ≥ 20. `sharp` installs from a prebuilt binary, so no local to
 
 ## Changelog
 
+### v1.5.0 (2026-10-23)
+
+**Reading experience**
+- Added adjacent-page preloading: CBZ/CBR prefetch the next two images, PDF pre-renders the next page into an offscreen canvas (invalidated on zoom/viewport change, max 3 cached). Page turns measured at 300–800ms → 2–4ms.
+- Capped canvas device pixel ratio at 2; high-DPR phones were allocating tens of MB of VRAM per page.
+- pdf.js now loads on demand instead of shipping 352KB to every shelf view.
+- Scroll mode no longer stacks duplicate scroll listeners; fixed a new book being hidden by the previous reader's deferred teardown.
+
+**Fixes**
+- **EPUB TOC**: OPF manifest parsing no longer depends on attribute order (`id → href → media-type`). 23 of 79 novels (29%) had an empty chapter list.
+- **Auto-decrypt toggle now respected**: it previously only checked whether a password was set, so the watchdog kept scanning the whole library every cycle with a 1.2s per-file throttle. Now gated by the setting, plus a content fingerprint and incremental file selection.
+- Deleting a comic now removes its fallback cover by `md5(path)`; the old `${id}.jpg` path never matched, so orphan covers accumulated.
+- Range responses destroy the read stream when the client disconnects, preventing fd leaks during long reading sessions.
+
+**Performance**
+- EPUB reuses zip handles (evicted by total bytes): repeat read on a 132MB book 62ms → 1ms, 10 image loads 677ms → 1ms.
+- `/api/library` cover existence now uses a directory index (one `readdir` + Set lookup): 1654 books went from 831ms of blocking `existsSync` to ~10ms.
+- Whole-library scans are de-duplicated in flight; the ETag now uses a content fingerprint (id+mtime+size) so clients stop re-downloading the full library every 10 minutes.
+
 ### v1.4.7 (2026-10-01)
 
 **Fix**

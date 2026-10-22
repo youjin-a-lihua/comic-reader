@@ -21,7 +21,7 @@ const {
   PROGRESS_FILE
 } = require('./lib/progress');
 const { getImageList, extractImage } = require('./lib/cbz');
-const { generate, prewarm, get: getCover, hasCover, saveCover } = require('./lib/thumbnail');
+const { generate, prewarm, get: getCover, hasCover, saveCover, cachePath: coverCachePath } = require('./lib/thumbnail');
 const { getToc, getChapter, getResource } = require('./lib/epub');
 const { getStore, installExitHooks } = require('./lib/jsonstore');
 const { getSettings, saveSettings } = require('./lib/settings');
@@ -183,6 +183,10 @@ app.get('/api/me', authMiddleware, async (req, res) => {
 let _scanCache = null;
 let _scanMap = null;
 let _scanTime = 0;
+let _scanVersion = 'init';
+// 在飞的扫描：首屏会并发打 /api/library、/api/continue、/api/ranking 等，
+// 没有这个锁时每个请求都会各自启动一次全库扫描。
+let _scanPromise = null;
 const SCAN_CACHE_TTL = 600000;
 
 function invalidateScan() {
@@ -191,9 +195,8 @@ function invalidateScan() {
   _scanTime = 0;
 }
 
-async function scanAllLibs(force = false) {
+async function runScan() {
   const now = Date.now();
-  if (!force && _scanCache && (now - _scanTime) < SCAN_CACHE_TTL) return _scanCache;
   const libs = readLibs();
   let all = [];
   for (const lib of libs) {
@@ -216,10 +219,34 @@ async function scanAllLibs(force = false) {
     prewarm(freshComics).catch(e => console.error('[prewarm]', e && e.message));
   }
 
+  // 内容指纹：id + mtime + size，任一条目变化才算新版本。
+  // 之前 ETag 用的是 _scanTime，缓存每 10 分钟过期重扫一次就换了 ETag，
+  // 所有客户端都要把整份书库重新下一遍，哪怕内容一字未改。
+  const ver = crypto.createHash('md5');
+  for (const c of all) ver.update(c.id + ':' + c.mtime + ':' + c.size + ';');
+  _scanVersion = ver.digest('hex').slice(0, 12);
+
   _scanCache = all;
   _scanMap = null;
   _scanTime = now;
   return all;
+}
+
+async function scanAllLibs(force = false) {
+  const now = Date.now();
+  if (!force && _scanCache && (now - _scanTime) < SCAN_CACHE_TTL) return _scanCache;
+
+  if (_scanPromise) {
+    // 非强制刷新：直接复用正在进行的扫描结果。
+    // 强制刷新（删除/新增库之后）：必须等它结束再自己扫一次，否则可能拿到
+    // 「删除之前」的旧列表，导致刚删的漫画又出现。
+    if (!force) return _scanPromise;
+    try { await _scanPromise; } catch (e) { /* 让下面重新扫 */ }
+  }
+
+  if (_scanPromise) return _scanPromise;   // 等待期间别人又起了扫描
+  _scanPromise = runScan().finally(() => { _scanPromise = null; });
+  return _scanPromise;
 }
 
 async function getComicMap(force = false) {
@@ -359,6 +386,9 @@ app.get('/api/comic/:id/file', authMiddleware, async (req, res) => {
     });
     const rs = fs.createReadStream(filePath, { start, end });
     rs.on('error', () => res.destroy());
+    // pdf.js 翻页会大量中断 Range 请求；客户端断开后必须主动 destroy 读流，
+    // 否则文件描述符要等 GC 才释放，长时间阅读可能 EMFILE。
+    res.on('close', () => rs.destroy());
     rs.pipe(res);
   } else {
     res.writeHead(200, {
@@ -368,6 +398,7 @@ app.get('/api/comic/:id/file', authMiddleware, async (req, res) => {
     });
     const rs = fs.createReadStream(filePath);
     rs.on('error', () => res.destroy());
+    res.on('close', () => rs.destroy());
     rs.pipe(res);
   }
 });
@@ -609,7 +640,9 @@ async function deleteComicFully(comic) {
   } catch (e) { errors.push('本体: ' + e.message); }
 
   const primaryCover = path.join(path.dirname(comic.path), '.thumbnails', `${id}.jpg`);
-  const fallbackCover = path.join(DATA_DIR, 'thumbnails', `${id}.jpg`);
+  // 兜底封面文件名是 md5(绝对路径) 前 16 位，不是漫画 id —— 之前按 `${id}.jpg`
+  // 删的是不存在的路径，所以每删一本就永久留下一个孤儿封面。
+  const fallbackCover = coverCachePath(id, comic.path) || path.join(DATA_DIR, 'thumbnails', `${id}.jpg`);
   for (const f of [primaryCover, fallbackCover]) {
     try { await fs.promises.rm(f, { force: true }); } catch (e) {  }
   }
@@ -883,7 +916,7 @@ app.get('/api/library', authMiddleware, async (req, res) => {
     const progHash = crypto.createHash('md5').update(JSON.stringify(progress)).digest('hex').slice(0, 10);
     // Hash the username: non-ASCII names cannot go into a header value, and this keeps the cache key per user.
     const userKey = crypto.createHash('sha1').update(req.user.username).digest('hex').slice(0, 8);
-    const etag = `W/"lib-${_scanTime}-${userKey}-${typeFilter || 'all'}-${allComics.length}-${progHash}"`;
+    const etag = `W/"lib-${_scanVersion}-${userKey}-${typeFilter || 'all'}-${allComics.length}-${progHash}"`;
     res.set('Cache-Control', 'no-cache'); // The cache bucket is per user, so switching accounts cannot reuse it.
     res.set('Vary', 'Authorization');
     res.set('ETag', etag);

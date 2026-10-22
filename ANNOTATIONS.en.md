@@ -36,7 +36,7 @@ Annotations live on the server, one file per book, so they survive a refresh and
 | `lib/epub.js` | TOC now tolerates a directory prefix in `spine.href` (`OEBPS/xxx.xhtml`) |
 
 > **Deployment note.** On the fnOS instance in use here, `reader.css` and `index.html` are
-> **host mounts** (`/vol2/@appdata/fn-comic-reader/`), while `server.js`, `reader.js` and `api.js`
+> **host mounts** (`/vol2/@appdata/<app>/`), while `server.js`, `reader.js` and `api.js`
 > live in the **container's writable layer** — they are lost when the container is recreated.
 > Re-deploy them from this repository after a rebuild.
 

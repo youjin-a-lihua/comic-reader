@@ -2569,6 +2569,11 @@ function closeReaderFast() {
 
 // 覆盖旧有的 closeReader 接口，保持对外兼容
 window.closeReader = closeReaderFast;
+// 打开新书时必须作废上一次 closeReaderFast 排队的收尾任务。
+// 令牌只在 closeReaderFast 里自增，而收尾是 setTimeout + requestIdleCallback 异步执行的：
+// 「返回书架 → 立刻点另一本」时，旧收尾会在新书已经渲染好之后才跑，
+// 把新阅读器 display:none 掉（表现为点进去一片空白，只能再退一次）。
+window.__cancelReaderTeardown = function () { _closeReaderToken++; };
 // 物理手势与 popstate 极速拦截
 window.addEventListener('popstate', (e) => {
   const readerEl = document.getElementById('reader');

@@ -7,12 +7,16 @@ let pdfDoc = null;
 let pdfState = null;
 
 async function openReader(comic, startPage) {
+  // 先作废上一次「快速退出」排队的收尾，否则它会在本书渲染完后把容器隐藏掉
+  if (typeof window.__cancelReaderTeardown === 'function') window.__cancelReaderTeardown();
   // Destroy any leftover pdf.js document first, or loadPdfPage silently reuses the previous book.
   releasePdfDoc();
 
   if (comic.ext === 'epub') {
     return openEpubReader(comic);
   }
+  // 只在真的要读 PDF 时才去拉 pdf.js（loadPdfPage 里已有等待循环兜底）
+  if (comic.ext === 'pdf') ensurePdfJs();
   try { history.pushState(null, '', '#reader/' + encodeURIComponent(String(comic.sourceId || comic.id))); } catch (e) {}
 
   let info = comic;
@@ -166,13 +170,10 @@ async function loadPdfPage(pageNum, mode) {
   const viewportEl = document.getElementById('readerViewport');
 
   if (mode === 'double' && pageNum < readerState.totalPages) {
-    const [page1, page2] = await Promise.all([
-      pdfDoc.getPage(pageNum),
-      pdfDoc.getPage(pageNum + 1)
+    const [canvas1, canvas2] = await Promise.all([
+      getPdfCanvas(pageNum, 'double'),
+      getPdfCanvas(pageNum + 1, 'double')
     ]);
-
-    const canvas1 = await renderPdfPageToCanvas(page1, 'double');
-    const canvas2 = await renderPdfPageToCanvas(page2, 'double');
 
     viewportEl.querySelectorAll('canvas').forEach(c => c.remove());
 
@@ -183,18 +184,88 @@ async function loadPdfPage(pageNum, mode) {
       viewportEl.appendChild(canvas1);
       viewportEl.appendChild(canvas2);
     }
+    prefetchPdfPage(pageNum + 2, 'double');
+    prefetchPdfPage(pageNum + 3, 'double');
   } else {
-    const page = await pdfDoc.getPage(pageNum);
-    const canvas = await renderPdfPageToCanvas(page, 'single');
+    const canvas = await getPdfCanvas(pageNum, 'single');
     viewportEl.querySelectorAll('canvas').forEach(c => c.remove());
     viewportEl.appendChild(canvas);
+    prefetchPdfPage(pageNum + 1, 'single');
+    prefetchPdfPage(pageNum + 2, 'single');
   }
+}
+
+// ── 相邻页预加载 ──────────────────────────────────────
+// 原来每次翻页都是「取页 → 渲染」串行，移动端一页要 300~800ms 白屏。
+// 这里把下一页提前渲染成离屏 canvas 存起来，翻页时直接挂上去。
+// 缓存键带上「缩放 + 视口尺寸」，旋转屏幕/改缩放会自然失效，不会拿到错尺寸的图。
+const pageCanvasCache = new Map();
+const _prefetching = new Set();
+
+function pdfCacheKey(pageNum, mode) {
+  const vp = document.getElementById('readerViewport');
+  const sig = vp ? Math.round(vp.clientWidth) + 'x' + Math.round(vp.clientHeight) : '0x0';
+  const comicId = readerState && readerState.comic ? readerState.comic.id : '';
+  return comicId + '|' + readerState.zoom + '|' + sig + '|' + mode + '|' + pageNum;
+}
+
+async function getPdfCanvas(pageNum, mode) {
+  const key = pdfCacheKey(pageNum, mode);
+  const hit = pageCanvasCache.get(key);
+  if (hit) {
+    pageCanvasCache.delete(key);   // 消费掉：同一个 canvas 不能同时挂在两处
+    return hit;
+  }
+  const page = await pdfDoc.getPage(pageNum);
+  return renderPdfPageToCanvas(page, mode);
+}
+
+function prefetchPdfPage(pageNum, mode) {
+  if (!pdfDoc || !readerState || pageNum < 1) return;
+  if (readerState.totalPages && pageNum > readerState.totalPages) return;
+  const key = pdfCacheKey(pageNum, mode);
+  if (pageCanvasCache.has(key) || _prefetching.has(key)) return;
+  _prefetching.add(key);
+  pdfDoc.getPage(pageNum)
+    .then(p => renderPdfPageToCanvas(p, mode))
+    .then(c => {
+      pageCanvasCache.set(key, c);
+      // 只留 3 张：一张 A4 页在 DPR2 下约 20MB 显存，留多了反而把内存吃穿
+      while (pageCanvasCache.size > 3) pageCanvasCache.delete(pageCanvasCache.keys().next().value);
+    })
+    .catch(() => {})
+    .finally(() => _prefetching.delete(key));
+}
+
+// CBZ/CBR 只要把图片 URL 提前塞给浏览器，翻页时就能直接命中 HTTP 缓存
+// （服务端已经给了 Cache-Control: max-age=86400）。
+const _imgPreload = new Map();
+
+function preloadCbzPage(pageNum) {
+  const comic = readerState && readerState.comic;
+  if (!comic || pageNum < 1) return;
+  if (readerState.totalPages && pageNum > readerState.totalPages) return;
+  let url;
+  if (comic.online && Array.isArray(comic.images)) {
+    if (pageNum > comic.images.length) return;
+    url = `/api/online/img?url=${encodeURIComponent(comic.images[pageNum - 1])}&token=${encodeURIComponent(getToken())}`;
+  } else {
+    url = ComicAPI.getPageUrl(comic.id, pageNum);
+  }
+  if (_imgPreload.has(url)) return;
+  const im = new Image();
+  im.decoding = 'async';
+  im.src = url;
+  _imgPreload.set(url, im);
+  while (_imgPreload.size > 4) _imgPreload.delete(_imgPreload.keys().next().value);
 }
 
 async function renderPdfPageToCanvas(page, displayMode) {
   const viewportEl = document.getElementById('readerViewport');
   const rect = viewportEl.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
+  // DPR 无上限会让旗舰机（DPR 3+）为一张 A4 扫描页开 3000×4000 的 canvas，
+  // 单页显存就 40MB+，滚动模式下几页同时存活足以把移动端 WebContent 撑爆。
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const maxW = displayMode === 'double' ? rect.width * 0.48 : rect.width;
   const maxH = rect.height;
 
@@ -256,6 +327,10 @@ async function loadCbzPage(pageNum) {
       } catch {}
     }
   }
+
+  // 预取后两页（totalPages 已知后再调，越界会被拦）
+  preloadCbzPage(pageNum + 1);
+  preloadCbzPage(pageNum + 2);
 }
 
 async function loadScrollMode() {
@@ -341,7 +416,13 @@ async function loadScrollMode() {
     }, 600);
   }
 
-  viewport.addEventListener('scroll', debounce(updateScrollProgress, 300));
+  // 每次进滚动模式都会重跑到这里，viewport 本身不重建，
+  // 不先摘掉旧监听就会越叠越多（切 10 次 = 10 个监听同时扫全页）。
+  if (readerState._scrollProgressHandler) {
+    viewport.removeEventListener('scroll', readerState._scrollProgressHandler);
+  }
+  readerState._scrollProgressHandler = debounce(updateScrollProgress, 300);
+  viewport.addEventListener('scroll', readerState._scrollProgressHandler);
   attachScrollSnapFallback();
   updateUI();
 }
@@ -352,7 +433,7 @@ async function renderScrollPage(pageNum) {
     const page = await pdfDoc.getPage(pageNum);
     const vp = document.getElementById('readerViewport');
     const rect = vp.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const maxW = rect.width;
 
     const orig = page.getViewport({ scale: 1 });
@@ -572,6 +653,10 @@ function showZoomIndicator(zoom) {
 
 // Destroy the document on close: dropping the reference keeps worker and chunks in memory.
 function releasePdfDoc() {
+  // 换书/关阅读器时把预渲染的 canvas 一起丢掉，否则显存会跟着「看过的书数」涨
+  try { pageCanvasCache.clear(); } catch (e) {}
+  try { _imgPreload.clear(); } catch (e) {}
+  try { _prefetching.clear(); } catch (e) {}
   if (!pdfDoc) return;
   try { pdfDoc.destroy(); } catch (e) {}
   pdfDoc = null;
@@ -817,7 +902,14 @@ document.addEventListener('click', (e) => {
 });
 
 // pdf.js is served locally first; the CDN fallback only matters when the NAS is offline.
-(function loadPdfJs() {
+// 改成按需加载：原来脚本一加载就 import 352KB 的 pdf.min.mjs，
+// 而只看书架/只看小说的用户根本用不到，白白跟书库接口抢带宽。
+let _pdfJsLoading = null;
+
+function ensurePdfJs() {
+  if (pdfjsLib) return Promise.resolve(pdfjsLib);
+  if (_pdfJsLoading) return _pdfJsLoading;
+
   var LOCAL = '/vendor/pdfjs';
   var CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38';
 
@@ -832,15 +924,18 @@ document.addEventListener('click', (e) => {
     });
   }
 
-  tryLoad(LOCAL)
+  _pdfJsLoading = tryLoad(LOCAL)
     .catch(function (e) {
       console.warn('[pdf.js] 本地副本加载失败，回退 CDN：', e && e.message);
       return tryLoad(CDN);
     })
     .catch(function (e) {
       console.error('[pdf.js] 加载彻底失败，PDF 将无法阅读：', e);
+      _pdfJsLoading = null;   // 允许下次重试
+      return null;
     });
-})();
+  return _pdfJsLoading;
+}
 
 let epubState = null;
 

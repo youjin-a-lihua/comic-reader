@@ -35,7 +35,7 @@
 | `lib/epub.js` | TOC 兼容 `spine.href` 带目录前缀（`OEBPS/xxx.xhtml`） |
 
 > **部署注意**：在 fnOS 实例上 `reader.css` 与 `index.html` 走**宿主挂载**
-> （`/vol2/@appdata/fn-comic-reader/`），而 `server.js` / `reader.js` / `api.js`
+> （`/vol2/@appdata/<app>/`），而 `server.js` / `reader.js` / `api.js`
 > 位于**容器可写层**——**容器重建即丢失**，重建后需从本仓库重新投放。
 
 ### 接口

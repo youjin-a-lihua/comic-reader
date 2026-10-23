@@ -11,8 +11,6 @@ A self-hosted reading server for comics, manga and novels. One container, readab
 - Pluggable online sources: search / online reading / download to library, off by default (see [ONLINE_SOURCES.en.md](ONLINE_SOURCES.en.md))
 - Optional AstrBot integration
 
-Changelog: [CHANGELOG.md](CHANGELOG.md).
-
 ## Quick start
 
 Images are published to GHCR for linux/amd64 and linux/arm64, built automatically by GitHub Actions on every push:
@@ -119,3 +117,70 @@ Requires Node.js ≥ 20 (`sharp` ships prebuilt binaries, no local compilation).
 - Follow the laws of your country or region and only access content you are entitled to access.
 - Any copyright or compliance responsibility from using online sources lies with the user.
 - Online features are off by default; without `ONLINE_SOURCE` the app makes no third-party requests.
+
+## Changelog
+
+### 1.5.0 (2026-10-23)
+
+Added
+
+- Adjacent-page preloading: CBZ/CBR prefetch the next two images, PDF pre-renders the next page; invalidated on zoom or rotation
+- `GET /healthz` endpoint plus a Docker `HEALTHCHECK` in the image
+- GitHub Actions builds amd64 / arm64 images and publishes them to GHCR
+- docker-compose gained `TZ`, `DECRYPT_PASSWORD`, and a reference to the published image
+
+Fixed
+
+- Some EPUBs opened with an empty table of contents: OPF manifest parsing no longer depends on attribute order
+- The auto-decrypt watchdog kept running with the switch off; it now honours the setting and only processes new or changed files
+- Deleting a comic left its fallback cover behind, accumulating orphan files over time
+- PDF range requests did not release the file handle on client disconnect
+- Opening another book right after returning to the shelf could be hidden by the previous teardown
+
+Changed
+
+- Docker base image moved to node:22-alpine, shrinking the image from ~1.3GB to ~305MB
+- The image ships bsdtar; CBR falls back to it when unrar is missing (CBR was unreadable in containers before)
+- Dependencies install with `npm ci` for reproducible builds
+- Library cover lookup, scan de-duplication and ETag changes: clients no longer re-download the whole catalogue when nothing changed
+
+### 1.4.7 (2026-10-01)
+
+- Progress and bookmarks survive when a file is deleted or renamed outside the app; shown as "file is gone"
+- Admin panel gained an orphan-records view; deletes can preview their impact
+
+### 1.4.6 (2026-10-01)
+
+- Fixed empty shelf pages for non-ASCII usernames (usernames are hashed before entering the ETag)
+
+### 1.4.5 (2026-09-30)
+
+- UI icons replaced with inline SVG (100 spots), no new files or dependencies
+
+### 1.4.4 (2026-09-30)
+
+- Removed redundant content from the README and code comments
+
+### 1.4.3 (2026-09-29)
+
+- Settings API no longer returns plaintext passwords; masked in the audit log; "clear password" added
+
+### 1.4.2 (2026-09-29)
+
+- Removed the built-in default decryption password
+
+### 1.4.1 (2026-09-29)
+
+- Trimmed code comments; added English docs
+
+### 1.4.0 (2026-09-24)
+
+- EPUB annotations / highlights (four colours), stored per book and synced across devices
+- AI chapter summaries
+- Fixed: tap zones blocking text selection, untagged comics invisible, novel-library PDF typing, EPUB TOC prefixes
+
+### 1.3.0 (2026-09-21)
+
+- Admin audit log; online download list and download history
+- Encrypted-PDF detection now reads only the file tail instead of whole files
+- Fixed CBZ/CBR paging, cover mix-ups, settings persistence; hardened the image proxy against SSRF

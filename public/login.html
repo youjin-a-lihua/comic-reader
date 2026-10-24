@@ -166,13 +166,13 @@
       try {
         var res = await fetch(API + '/api/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'comic-reader' },
           body: JSON.stringify({ username: u, password: p })
         });
         var data = await res.json();
         if (!res.ok) { showError(data.error || '登录失败'); setLoading(false); return; }
 
-        localStorage.setItem('fn_comic_token', data.token);
+        // The session cookie is set by the server; nothing sensitive is stored here.
         localStorage.setItem('fn_comic_user', JSON.stringify(data.user));
         if (remember) {
           localStorage.setItem('fn_comic_remembered_user', u);
@@ -192,7 +192,10 @@
     var saved = localStorage.getItem('fn_comic_remembered_user');
     if (saved) { document.getElementById('username').value = saved; document.getElementById('password').focus(); }
 
-    if (localStorage.getItem('fn_comic_token')) { window.location.href = API + '/app'; }
+    // Already signed in (HttpOnly session cookie) → skip the form.
+    fetch(API + '/api/me', { credentials: 'same-origin' })
+      .then(function(r) { if (r.ok) window.location.href = API + '/app'; })
+      .catch(function() { });
 
     var savedTheme = localStorage.getItem('fn_comic_theme');
     if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);

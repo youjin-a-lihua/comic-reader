@@ -120,6 +120,27 @@ Requires Node.js ≥ 20 (`sharp` ships prebuilt binaries, no local compilation).
 
 ## Changelog
 
+### 1.6.0 (2026-10-25)
+
+Security
+
+- The session now lives in an **HttpOnly cookie** (`SameSite=Strict`): the token is no longer kept in localStorage nor appended to image URLs, so injected scripts cannot read it and it no longer leaks into browser history or proxy logs. The API still accepts `Authorization: Bearer` for scripts.
+- **CSRF protection**: every non-GET request must send `X-Requested-With`.
+- **Token revocation**: user records carry a `tokenVersion`; changing or resetting a password, changing a role or deleting an account invalidates every previously issued token (previously a 30-day token survived a password change).
+- Added security headers: `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`.
+- EPUB chapter responses get their own strict CSP (`script-src 'none'`), so opening a chapter URL directly cannot execute script; out-of-range chapter indexes return 404.
+- The audit log keeps 5 rotating generations instead of 1 (each rotation used to overwrite the previous file).
+- `uncaughtException` now flushes data and exits, letting the restart policy rebuild instead of serving from an unknown state.
+- A startup check warns when another instance shares the same `DATA_DIR` (two writers overwrite each other's JSON).
+
+Fixed
+
+- The login page's session pre-check and login request now send the CSRF header, fixing the redirect after sign-in.
+- App startup asks the server whether the session is valid instead of trusting a local flag (which caused a redirect loop with the login page).
+- Removed `Bearer null` from pdf.js requests (it overrode the valid cookie and returned 401).
+- Search, online search, profile and page switching use request sequence numbers so stale responses no longer overwrite newer results.
+- Tapping a page-turn zone no longer also toggles the reader bars.
+
 ### 1.5.1 (2026-10-25)
 
 Security

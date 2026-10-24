@@ -120,6 +120,27 @@ npm start            # 或 npm run dev（热重载）；默认 http://localhost:
 
 ## 更新记录
 
+### 1.6.0（2026-10-25）
+
+安全
+
+- 会话改为 **HttpOnly Cookie**（`SameSite=Strict`）：token 不再存 localStorage，也不再拼进图片 URL —— 注入脚本读不到，浏览器历史和代理日志里也不会留下凭据。接口仍接受 `Authorization: Bearer`，方便脚本调用
+- 新增 **CSRF 防护**：所有非 GET 请求必须带 `X-Requested-With` 头
+- 新增 **JWT 吊销**：用户记录带 `tokenVersion`，改密、重置密码、变更角色、删除账号都会让此前签发的 token 立即失效（原本签 30 天，改密后旧 token 仍可用）
+- 新增安全响应头：`Content-Security-Policy`、`X-Content-Type-Options`、`X-Frame-Options`、`Referrer-Policy`
+- EPUB 章节响应单独加严格 CSP（`script-src 'none'`），直接打开章节 URL 也无法执行脚本；章节序号越界改返回 404
+- 审计日志改为保留 5 代轮转（原本只留 1 份，每次轮转都覆盖更早的记录）
+- `uncaughtException` 现在会先落盘再退出，交给容器重启策略重建，不再带伤运行
+- 启动时检测同一 `DATA_DIR` 上的并发实例并告警（两个进程写同一批 JSON 会互相覆盖）
+
+修复
+
+- 登录页的会话预检与登录请求补齐 CSRF 头，修复登录后跳转失败
+- 应用启动改为向服务端确认会话，不再依赖本地标记（否则会与登录页互相跳转）
+- 移除 pdf.js 请求里的 `Bearer null`（会覆盖有效的 Cookie 并被判 401）
+- 搜索、在线搜索、个人页、页面切换增加请求序号，旧回包不再覆盖新结果
+- 阅读器翻页热区不再同时切换控制栏
+
 ### 1.5.1（2026-10-25）
 
 安全

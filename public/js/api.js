@@ -1,9 +1,14 @@
-// Thin fetch wrapper over the REST API, handling the JWT.
+// Thin fetch wrapper over the REST API.
+//
+// The session is an HttpOnly cookie set by the server, so no token is kept in
+// localStorage (any injected script could read it) and none is appended to URLs
+// (they end up in history, proxy logs and Referer). The Authorization header is
+// only sent when a token happens to exist, for API clients.
 
 const API_BASE = window.location.origin;
 
 function getToken() {
-  return localStorage.getItem('fn_comic_token');
+  return null;
 }
 
 // Global timeout: a stalled disk must not leave the UI pending forever.
@@ -13,7 +18,9 @@ async function api(path, options = {}) {
   const token = getToken();
   const headers = {
     ...(options.headers || {}),
-    'Authorization': `Bearer ${token}`
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    // Required by the server on every state-changing request (CSRF defence).
+    'X-Requested-With': 'comic-reader'
   };
 
   if (options.body && typeof options.body === 'object' && !(options.body instanceof FormData)) {
@@ -36,13 +43,24 @@ async function api(path, options = {}) {
   clearTimeout(timer);
 
   if (res.status === 401) {
-    localStorage.removeItem('fn_comic_token');
     localStorage.removeItem('fn_comic_user');
     window.location.href = '/';
     throw new Error('登录已过期');
   }
 
   return res;
+}
+
+// Async race guard: render only if no newer request for the same tag started
+// while this one was in flight.
+const _seqCounters = new Map();
+function nextSeq(tag) {
+  const n = (_seqCounters.get(tag) || 0) + 1;
+  _seqCounters.set(tag, n);
+  return n;
+}
+function isStale(tag, seq) {
+  return (_seqCounters.get(tag) || 0) !== seq;
 }
 
 const ComicAPI = {
@@ -152,8 +170,7 @@ const ComicAPI = {
   },
 
   getCoverUrl(id) {
-    const token = getToken();
-    return `${API_BASE}/api/comic/${id}/cover?token=${encodeURIComponent(token)}`;
+    return `${API_BASE}/api/comic/${id}/cover`;
   },
 
   async saveProgress(id, page, totalPages) {

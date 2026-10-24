@@ -52,8 +52,14 @@ function cycleTheme() {
 }
 
 async function initApp() {
-  const token = getToken();
-  if (!token) { window.location.href = '/'; return; }
+  // The session is an HttpOnly cookie, so the client cannot inspect it. Ask the
+  // server once; trusting a local flag here caused a redirect loop.
+  let signedIn = false;
+  try {
+    const r = await fetch('/api/me', { credentials: 'same-origin', headers: { 'X-Requested-With': 'comic-reader' } });
+    signedIn = r.ok;
+  } catch (e) {  }
+  if (!signedIn) { window.location.href = '/'; return; }
   initTheme();
   if (typeof currentLayout !== 'undefined') {
     document.body.setAttribute('data-layout', currentLayout);
@@ -158,9 +164,11 @@ function switchPage(tab) {
 }
 
 async function renderPage(tab) {
+  const seq = nextSeq('renderPage');
   if (window._libraryNeedsRefresh) {
     window._libraryNeedsRefresh = false;
     await loadAllData(false, tab);
+    if (isStale('renderPage', seq)) return;
     return;
   }
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -260,7 +268,7 @@ function renderContinueCard(comic) {
       <div class="continue-cover">
         <img src="${coverUrl}" alt="" loading="lazy" decoding="async" 
           onerror="this.parentElement.innerHTML='<span class=placeholder>' + ico('book') + '</span>'"
-          ${getToken() ? `onload="this.setAttribute('data-loaded','1')"` : ''}>
+          onload="this.setAttribute('data-loaded','1')">
       </div>
       <div class="continue-info">
         <div class="title">${escHtml(comic.name)}</div>
@@ -466,7 +474,7 @@ let rankMode = 'weekly';
 async function loadRanking(mode) {
   rankMode = mode;
   try {
-    const res = await fetch('/api/ranking', { headers: { 'Authorization': `Bearer ${getToken()}` } });
+    const res = await fetch('/api/ranking', { headers: { 'X-Requested-With': 'comic-reader' } });
     rankData = await res.json();
   } catch { rankData = { weekly: [], allTime: [] }; }
   renderRanking();
@@ -496,7 +504,7 @@ function renderRanking() {
 
 async function toggleLikeFromReader(comicId) {
   try {
-    await fetch(`/api/comic/${comicId}/like`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` } });
+    await fetch(`/api/comic/${comicId}/like`, { method: 'POST', headers: { 'X-Requested-With': 'comic-reader' } });
   } catch {}
 }
 
@@ -541,8 +549,11 @@ async function performSearch(q) {
   document.getElementById('searchResults').style.display = 'block';
   document.getElementById('searchGrid').innerHTML = renderSkeletonHtml(4);
 
+  const seq = nextSeq('search');
   try {
     const results = await ComicAPI.search(q);
+    // A newer keystroke already started another search; drop this response.
+    if (isStale('search', seq)) return;
     if (results.length === 0) {
       document.getElementById('searchResults').style.display = 'none';
       document.getElementById('searchEmpty').style.display = 'flex';
@@ -634,7 +645,7 @@ function openComicById(id, triggerEl) {
     firstRect = imgEl.getBoundingClientRect();
   }
 
-  fetch(`/api/comic/${id}/view`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` } }).catch(() => {});
+  fetch(`/api/comic/${id}/view`, { method: 'POST', headers: { 'X-Requested-With': 'comic-reader' } }).catch(() => {});
   detailBackPage = currentTab || 'comic';
   detailBackTag = selectedTag;
   detailBackScroll = window.scrollY || document.documentElement.scrollTop || 0;
@@ -1332,7 +1343,7 @@ function renderJmSession(messages, ingest) {
     let html = '';
     if (imgs.length) {
       const c = imgs[0];
-      html += '<div class="jm-detail-cover"><img src="/api/astrbot/attachment/' + encodeURIComponent(jmPollSid) + '/' + encodeURIComponent(c.attachmentId) + '?token=' + encodeURIComponent(getToken() || '') + '" loading="lazy" alt="cover"></div>';
+      html += '<div class="jm-detail-cover"><img src="/api/astrbot/attachment/' + encodeURIComponent(jmPollSid) + '/' + encodeURIComponent(c.attachmentId) + '" loading="lazy" alt="cover"></div>';
     }
     html += '<div class="jm-detail-meta">';
     for (const t of botTexts) html += '<div class="jm-detail-line">' + escHtml(t).replace(/\n/g, '<br>') + '</div>';
@@ -1387,6 +1398,7 @@ function renderProfileTimeout(el) {
 }
 
 async function renderProfile() {
+  const seq = nextSeq('profile');
   const el = $('profileContent');
   if (!el) return;
 
@@ -1399,6 +1411,7 @@ async function renderProfile() {
       ComicAPI.getContinue(),
       ComicAPI.getDownloads(20).catch(() => ({ items: [] }))
     ]);
+    if (isStale('profile', seq)) { clearTimeout(timer); return; }
     clearTimeout(timer);
     renderProfileContent(el, bookmarks, recent, downloads);
     userShelves = await ComicAPI.getShelves();
@@ -1697,7 +1710,7 @@ function renderPdfCover(coverEl, comic) {
 }
 
 function logout() {
-  localStorage.removeItem('fn_comic_token');
+  fetch('/api/logout', { method: 'POST', headers: { 'X-Requested-With': 'comic-reader' } }).catch(() => {});
   localStorage.removeItem('fn_comic_user');
   window.location.href = '/';
 }
@@ -2088,7 +2101,7 @@ function onOnlineSourceChange() {
 
 function onlineImgUrl(rawUrl) {
   const src = currentOnlineSource ? `&source=${encodeURIComponent(currentOnlineSource)}` : '';
-  return `/api/online/img?url=${encodeURIComponent(rawUrl)}&token=${encodeURIComponent(getToken())}${src}`;
+  return `/api/online/img?url=${encodeURIComponent(rawUrl)}${src}`;
 }
 
 function onOnlineSearchInput() {
@@ -2128,16 +2141,19 @@ async function onlineSearch(page) {
   if (results) results.style.display = 'none';
   if (empty) empty.style.display = 'none';
 
+  const seq = nextSeq('onlineSearch');
+  const reqPage = currentOnlinePage;
   try {
-    const res = await api(`/api/online/search?q=${encodeURIComponent(kw)}&order=${currentOnlineOrder}&page=${currentOnlinePage}`);
+    const res = await api(`/api/online/search?q=${encodeURIComponent(kw)}&order=${currentOnlineOrder}&page=${reqPage}`);
     const data = await res.json();
     if (!res.ok) { toast(data.error || '搜索失败'); if (loading) loading.style.display = 'none'; return; }
+    if (isStale('onlineSearch', seq)) return;
     currentOnlineMaxPage = data.maxPage || 1;
     const grid = document.getElementById('onlineGrid');
     if (grid) {
       const html = (data.comics || []).map(renderOnlineCard).join('');
       // Page 1 replaces; later pages append, otherwise "load more" drops the first page.
-      if (currentOnlinePage > 1) grid.insertAdjacentHTML('beforeend', html);
+      if (reqPage > 1) grid.insertAdjacentHTML('beforeend', html);
       else grid.innerHTML = html;
     }
     if (loading) loading.style.display = 'none';
@@ -2573,7 +2589,7 @@ function updateLocalProgressAfterRead() {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${getToken()}`
+      'X-Requested-With': 'comic-reader'
     },
     body: JSON.stringify({ page: curPage, totalPages: total })
   }).catch(() => {});

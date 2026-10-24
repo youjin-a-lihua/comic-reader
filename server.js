@@ -1,5 +1,6 @@
 // Express server: auth, library scan/cache, PDF/EPUB/CBZ/cover serving, bookmarks, annotations, admin.
 
+const os = require('os');
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const path = require('path');
@@ -8,7 +9,7 @@ const crypto = require('crypto');
 const http = require('http');
 const net = require('net');
 
-const { authenticate } = require('./lib/auth');
+const { authenticate, findUser } = require('./lib/auth');
 const { scanAsync, fileId } = require('./lib/scanner');
 const {
   getUserProgress,
@@ -23,7 +24,7 @@ const {
 const { getImageList, extractImage } = require('./lib/cbz');
 const { generate, prewarm, get: getCover, hasCover, saveCover, cachePath: coverCachePath } = require('./lib/thumbnail');
 const { getToc, getChapter, getResource } = require('./lib/epub');
-const { getStore, installExitHooks } = require('./lib/jsonstore');
+const { getStore, installExitHooks, flushAll } = require('./lib/jsonstore');
 const { getSettings, saveSettings } = require('./lib/settings');
 const { autoDecryptOnce, startAutoDecryptScheduler } = require('./lib/autodecrypt');
 const { isEncryptedPdf, decryptPdfBuffer, decryptFileInPlace } = require('./lib/decrypt');
@@ -33,6 +34,19 @@ const audit = require('./lib/auditlog');
 const onlineSources = require('./lib/sources');
 
 const app = express();
+
+function parseCookies(req) {
+  const out = {};
+  const raw = req.headers.cookie;
+  if (!raw) return out;
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
 
 // Express 4 does not catch rejections from async handlers; without this wrapper the client hangs forever.
 for (const verb of ['get', 'post', 'put', 'delete', 'patch', 'options', 'head', 'use']) {
@@ -73,6 +87,46 @@ const JWT_SECRET = loadJwtSecret();
 
 app.use(express.json({ limit: '1mb' }));
 app.use(require('compression')());
+
+// Cookies are parsed here so the auth middleware can read the session cookie
+// without pulling in a cookie-parser dependency.
+app.use((req, res, next) => {
+  req.cookies = parseCookies(req);
+  next();
+});
+
+// Baseline security headers on every response.
+// CSP allows inline script/handler and blob: workers because the front end and
+// pdf.js depend on them; it still blocks framing, mixed content and foreign origins.
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('X-Frame-Options', 'SAMEORIGIN');
+  res.set('Referrer-Policy', 'no-referrer');
+  res.set('Content-Security-Policy',
+    "default-src 'self'; "
+    + "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; "
+    + "style-src 'self' 'unsafe-inline'; "
+    + "img-src 'self' data: blob:; "
+    + "media-src 'self' blob:; "
+    + "font-src 'self' data:; "
+    + "connect-src 'self'; "
+    + "frame-src 'self' blob:; "
+    + "worker-src 'self' blob:; "
+    + "object-src 'none'; "
+    + "base-uri 'self'; "
+    + "form-action 'self'");
+  next();
+});
+
+// CSRF: the session cookie is SameSite=Strict, and state-changing requests must
+// also carry a custom header, which no cross-site form or <img> can set.
+app.use((req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  if (!req.headers['x-requested-with']) {
+    return res.status(403).json({ error: '缺少 X-Requested-With 头，请求已拒绝' });
+  }
+  next();
+});
 app.use('/api/comic/:id/cover', express.raw({ type: ['image/jpeg', 'image/png'], limit: '4mb' }));
 
 app.disable('x-powered-by');
@@ -89,11 +143,17 @@ app.use('/vendor', express.static(path.join(PUBLIC_DIR, 'vendor'), {
 }));
 app.use(express.static(PUBLIC_DIR, { index: false }));
 
+const AUTH_COOKIE = 'fn_comic_token';
+
+// The session lives in an HttpOnly cookie so no token is kept in localStorage
+// (readable by any injected script) and none is pasted into URLs.
 function authMiddleware(req, res, next) {
   let token = null;
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.slice(7);
+  } else if (req.cookies && req.cookies[AUTH_COOKIE]) {
+    token = req.cookies[AUTH_COOKIE];
   } else if (req.query.token) {
     token = req.query.token;
   }
@@ -102,7 +162,13 @@ function authMiddleware(req, res, next) {
   }
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload;
+    // Revocation: password change, reset, role change and deletion all bump the
+    // user's tokenVersion, which invalidates every token issued before it.
+    const user = findUser(payload.username);
+    if (!user || (user.tokenVersion || 1) !== (payload.tv || 1)) {
+      return res.status(401).json({ error: '登录状态已失效，请重新登录' });
+    }
+    req.user = { username: user.username, role: user.role };
     next();
   } catch {
     return res.status(401).json({ error: '登录已过期，请重新登录' });
@@ -174,18 +240,25 @@ app.post('/api/login', async (req, res) => {
   }
   loginAttempts.delete(key);
 
+  const tv = findUser(result.username);
   const token = jwt.sign(
-    { username: result.username, role: result.role },
+    { username: result.username, role: result.role, tv: (tv && tv.tokenVersion) || 1 },
     JWT_SECRET,
     { expiresIn: '30d' }
   );
 
   audit.record({ user: result.username, ip, action: 'login', detail: `角色 ${result.role}`, result: 'ok' });
-  res.json({ token, user: { username: result.username, role: result.role } });
+  res.set('Set-Cookie', `${AUTH_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${30 * 24 * 3600}`);
+  res.json({ user: { username: result.username, role: result.role } });
 });
 
 app.get('/api/me', authMiddleware, async (req, res) => {
   res.json({ user: { username: req.user.username, role: req.user.role } });
+});
+
+app.post('/api/logout', (req, res) => {
+  res.set('Set-Cookie', `${AUTH_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
+  res.json({ success: true });
 });
 
 let _scanCache = null;
@@ -462,11 +535,18 @@ app.get('/api/comic/:id/epub/chapter/:index', authMiddleware, async (req, res) =
   if (!Number.isInteger(index) || index < 0) {
     return res.status(400).json({ error: '章节序号无效' });
   }
+  // Reject out-of-range indexes with 404 instead of letting the parser throw a 500.
+  const tocLen = (getToc(comic.path) || []).length;
+  if (tocLen && index >= tocLen) return res.status(404).json({ error: '章节不存在' });
+
   const html = getChapter(comic.path, index,
     `/api/comic/${comic.id}/epub/resource`);
-  if (!html) return res.status(500).json({ error: '章节读取失败' });
+  if (!html) return res.status(404).json({ error: '章节不存在' });
 
   res.set('Content-Type', 'text/html; charset=utf-8');
+  // Chapter HTML comes from user-supplied EPUBs. It is injected into a sandboxed
+  // iframe, but this header also neutralises direct navigation to the URL.
+  res.set('Content-Security-Policy', "default-src 'self' data: blob:; script-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'");
   res.send(html);
 });
 
@@ -1647,7 +1727,33 @@ process.on('unhandledRejection', (reason) => {
 });
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
+  try { flushAll(); } catch (e) {}
+  // Continuing after an unknown-state exception risks serving corrupt data;
+  // exit and let the restart policy rebuild from the persisted JSON.
+  setTimeout(() => process.exit(1), 300).unref();
 });
+
+// Two writers on one DATA_DIR will silently overwrite each other's JSON files
+// (last rename wins), so surface it loudly instead of losing data quietly.
+function checkConcurrentInstance() {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const marker = path.join(DATA_DIR, '.instance');
+    const mine = { host: os.hostname(), pid: process.pid, start: Date.now() };
+    let prev = null;
+    try { prev = JSON.parse(fs.readFileSync(marker, 'utf8')); } catch {  }
+    if (prev && prev.pid !== mine.pid && Date.now() - prev.start < 5 * 60 * 1000) {
+      if (prev.host !== mine.host) {
+        console.error(`[warn] 检测到另一个实例占用同一个 DATA_DIR（host=${prev.host} pid=${prev.pid}）。并发写入 users/progress/likes 会互相覆盖，请只保留一个实例。`);
+      }
+    }
+    fs.writeFileSync(marker, JSON.stringify(mine));
+    const beat = setInterval(() => {
+      try { fs.writeFileSync(marker, JSON.stringify(mine)); } catch {  }
+    }, 60000);
+    if (beat.unref) beat.unref();
+  } catch (e) {  }
+}
 
 if (require.main === module) {
   app.listen(PORT, '0.0.0.0', () => {
@@ -1656,6 +1762,7 @@ if (require.main === module) {
     console.log(`Data directory: ${DATA_DIR}`);
     console.log('JWT secret: 已持久化到 DATA_DIR/.jwt-secret');
 
+    checkConcurrentInstance();
     startAutoDecryptScheduler(readLibs);
   });
 }

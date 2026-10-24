@@ -160,9 +160,9 @@ body { background: radial-gradient(125% 125% at 50% 0%, #16161f 0%, #0b0b11 45%,
 
 <script>
 var API=location.origin;
-function tk(){ return localStorage.getItem('fn_comic_token'); }
+// Session is carried by an HttpOnly cookie; no token is stored client-side.
 async function api(path,opts){
- opts=opts||{}; opts.headers=Object.assign({Authorization:'Bearer '+tk()},opts.headers||{});
+ opts=opts||{}; opts.headers=Object.assign({'X-Requested-With':'comic-reader'},opts.headers||{});
  if(opts.body&&typeof opts.body=='object'){ opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(opts.body); }
  var r=await fetch(API+path,opts);
  if(r.status==401){ localStorage.clear(); location.href='/'; throw new Error('expired'); }

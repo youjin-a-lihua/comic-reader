@@ -158,7 +158,7 @@ async function loadPdfPage(pageNum, mode) {
     const loadingTask = pdfjsLib.getDocument({
       url,
       withCredentials: true,
-      httpHeaders: { 'Authorization': `Bearer ${getToken()}` }
+      httpHeaders: {}
     });
     pdfDoc = await loadingTask.promise;
     readerState.totalPages = pdfDoc.numPages;
@@ -242,7 +242,7 @@ function preloadCbzPage(pageNum) {
   let url;
   if (comic.online && Array.isArray(comic.images)) {
     if (pageNum > comic.images.length) return;
-    url = `/api/online/img?url=${encodeURIComponent(comic.images[pageNum - 1])}&token=${encodeURIComponent(getToken())}`;
+    url = `/api/online/img?url=${encodeURIComponent(comic.images[pageNum - 1])}`;
   } else {
     url = ComicAPI.getPageUrl(comic.id, pageNum);
   }
@@ -297,7 +297,7 @@ async function loadCbzPage(pageNum) {
   const comic = readerState.comic;
   if (comic.online && Array.isArray(comic.images)) {
     const rawUrl = comic.images[pageNum - 1];
-    img.src = `/api/online/img?url=${encodeURIComponent(rawUrl)}&token=${encodeURIComponent(getToken())}`;
+    img.src = `/api/online/img?url=${encodeURIComponent(rawUrl)}`;
   } else {
     img.src = ComicAPI.getPageUrl(comic.id, pageNum);
   }
@@ -342,7 +342,7 @@ async function loadScrollMode() {
     const url = ComicAPI.getFileUrl(readerState.comic.id);
     const loadingTask = pdfjsLib.getDocument({
       url, withCredentials: true,
-      httpHeaders: { 'Authorization': `Bearer ${getToken()}` }
+      httpHeaders: {}
     });
     pdfDoc = await loadingTask.promise;
     readerState.totalPages = pdfDoc.numPages;
@@ -1616,7 +1616,7 @@ function toggleLikeComic() {
   if (!readerState && !epubState) return;
   const comic = readerState ? readerState.comic : epubState.comic;
   const btn = document.getElementById('btnLike');
-  fetch(`/api/comic/${comic.id}/like`, { method: 'POST', headers: { 'Authorization': `Bearer ${getToken()}` } })
+  fetch(`/api/comic/${comic.id}/like`, { method: 'POST', headers: { 'X-Requested-With': 'comic-reader' } })
     .then(r => r.json()).then(d => {
       likeState = d;
       btn.innerHTML = d.liked ? ico('heart', 'fill') : ico('heart-o');

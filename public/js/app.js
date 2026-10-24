@@ -1807,13 +1807,36 @@ function renderGrid(gridId, continueId, series) {
     _bySid[sid] = s;
     s.items.forEach((c, ii) => _flat.push({ si, ii, sid }));
   });
-  grid._gstate = { series, flat: _flat, bySid: _bySid, pos: 0, openSid: null, openGridEl: null };
+  grid._gstate = { series, flat: _flat, bySid: _bySid, pos: 0, openSid: null, openGridEl: null, reclaimed: 0 };
+  grid._renderArgs = [gridId, continueId, series];
+  armGridRestore(grid);
   grid.innerHTML = '';
   grid._sentinel = document.createElement('div');
   grid._sentinel.className = 'grid-sentinel';
   grid._sentinel.style.height = '1px';
   grid.appendChild(grid._sentinel);
   appendGridBatch(grid);
+}
+
+// Reclaiming offscreen sections is one-way: scrolling back up left permanent
+// blank gaps. Rebuild from the original arguments when the user scrolls up;
+// the render is deterministic, so cards land at the same offsets.
+function armGridRestore(grid) {
+  if (grid._restoreArmed) return;
+  grid._restoreArmed = true;
+  let lastY = window.scrollY;
+  let busy = false;
+  window.addEventListener('scroll', () => {
+    const st = grid._gstate;
+    const y = window.scrollY;
+    if (!st || !st.reclaimed || busy) { lastY = y; return; }
+    if (y < lastY - 150) {
+      busy = true;
+      try { renderGrid.apply(null, grid._renderArgs); } catch (e) {}
+      requestAnimationFrame(() => { window.scrollTo(0, y); busy = false; });
+    }
+    lastY = y;
+  }, { passive: true });
 }
 
 function appendGridBatch(grid) {
@@ -1870,7 +1893,7 @@ function appendGridBatch(grid) {
         if (node === grid._sentinel || !node.classList) continue;
         if (node.classList.contains('series-section') && !node.contains(st.openGridEl)) {
           const r = node.getBoundingClientRect();
-          if (r.bottom < -vh * 2) { node.remove(); removed++; }
+          if (r.bottom < -vh * 2) { node.remove(); removed++; st.reclaimed++; }
         }
       }
     }
@@ -2111,7 +2134,12 @@ async function onlineSearch(page) {
     if (!res.ok) { toast(data.error || '搜索失败'); if (loading) loading.style.display = 'none'; return; }
     currentOnlineMaxPage = data.maxPage || 1;
     const grid = document.getElementById('onlineGrid');
-    if (grid) grid.innerHTML = (data.comics || []).map(renderOnlineCard).join('');
+    if (grid) {
+      const html = (data.comics || []).map(renderOnlineCard).join('');
+      // Page 1 replaces; later pages append, otherwise "load more" drops the first page.
+      if (currentOnlinePage > 1) grid.insertAdjacentHTML('beforeend', html);
+      else grid.innerHTML = html;
+    }
     if (loading) loading.style.display = 'none';
     if (data.comics && data.comics.length > 0) {
       if (results) results.style.display = 'block';

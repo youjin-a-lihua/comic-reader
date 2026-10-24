@@ -120,6 +120,29 @@ Requires Node.js ≥ 20 (`sharp` ships prebuilt binaries, no local compilation).
 
 ## Changelog
 
+### 1.5.1 (2026-10-25)
+
+Security
+
+- The AstrBot SSRF guard had its private-network checks inverted: 192.168.x, 127.0.0.1, ::1 and Docker ranges were all allowed. It now reuses the image proxy's "resolve DNS, then check every address" implementation and covers decimal IPs and IPv4-mapped forms.
+- AstrBot config / command / session / attachment endpoints are admin-only (the config is global, so any logged-in user could previously overwrite it).
+- Login rate limiting no longer trusts the client-supplied X-Forwarded-For header (set TRUST_PROXY=1 to opt in).
+- A corrupt or unreadable users.json now refuses login instead of handing administrator rights to the first caller.
+- Usernames are restricted to letters, digits and ._-@ (1-64 chars), including first-run bootstrap.
+- Annotations can only be modified or deleted by their author.
+- Error logs no longer print full URLs containing the JWT; the startup log no longer prints a JWT prefix.
+- Online source search order, album id and episode id are URL-encoded before being appended.
+- Image proxy: connections are pinned to the address that passed the check (DNS rebinding); the cache gained a byte cap and a TTL.
+
+Fixed
+
+- CBR pages were read as UTF-8 text, corrupting every binary image; extraction now returns a Buffer.
+- "Load more" in the online tab appends instead of replacing page 1.
+- Reclaimed grid sections are rebuilt when scrolling back up instead of leaving permanent gaps.
+- Imported online downloads appear in the library immediately instead of up to 10 minutes later.
+- The download history cap now applies (update() ignored the return value).
+- Admin user-list usernames are attribute-escaped.
+
 ### 1.5.0 (2026-10-23)
 
 Added

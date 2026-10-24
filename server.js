@@ -27,7 +27,7 @@ const { getStore, installExitHooks } = require('./lib/jsonstore');
 const { getSettings, saveSettings } = require('./lib/settings');
 const { autoDecryptOnce, startAutoDecryptScheduler } = require('./lib/autodecrypt');
 const { isEncryptedPdf, decryptPdfBuffer, decryptFileInPlace } = require('./lib/decrypt');
-const { getOnlineImage } = require('./lib/online-image');
+const { getOnlineImage, ssrfCheck } = require('./lib/online-image');
 const { startDownload, getJob, publicJob, listHistory } = require('./lib/onlinedl');
 const audit = require('./lib/auditlog');
 const onlineSources = require('./lib/sources');
@@ -121,9 +121,17 @@ const loginAttempts = new Map();
 const LOGIN_WINDOW = 5 * 60 * 1000;
 const LOGIN_MAX_FAIL = 10;
 
+function clientIp(req) {
+  // Only trust X-Forwarded-For when an explicit trusted-proxy chain is configured;
+  // otherwise a client can rotate the header and reset the failure counter.
+  if (process.env.TRUST_PROXY === '1' || process.env.TRUST_PROXY === 'true') {
+    const fwd = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    if (fwd) return fwd;
+  }
+  return req.socket.remoteAddress || 'unknown';
+}
 function loginKey(req, username) {
-  const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
-  return `${ip}|${username}`;
+  return `${clientIp(req)}|${username}`;
 }
 function isLocked(key) {
   const rec = loginAttempts.get(key);
@@ -1162,7 +1170,7 @@ app.patch('/api/comic/:id/annotations/:aid', authMiddleware, async (req, res) =>
   const store = annotationsStore(req.params.id);
   let hit = null;
   store.update(list => {
-    const it = list.find(a => a.id === req.params.aid);
+    const it = list.find(a => a.id === req.params.aid && a.user === req.user.username);
     if (it) {
       if (typeof req.body.note === 'string') it.note = req.body.note.slice(0, 2000);
       if (ANNOT_COLORS.includes(req.body.color)) it.color = req.body.color;
@@ -1177,7 +1185,7 @@ app.patch('/api/comic/:id/annotations/:aid', authMiddleware, async (req, res) =>
 app.delete('/api/comic/:id/annotations/:aid', authMiddleware, async (req, res) => {
   const store = annotationsStore(req.params.id);
   const before = store.read().length;
-  store.set(store.read().filter(a => a.id !== req.params.aid));
+  store.set(store.read().filter(a => a.id !== req.params.aid || a.user !== req.user.username));
   res.json({ success: store.read().length < before });
 });
 
@@ -1329,6 +1337,7 @@ app.post('/api/online/download', authMiddleware, async (req, res) => {
     targetDir: ONLINE_DL_DIR,
     user: req.user.username,
     ip: audit.clientIp(req),
+    onImported: () => { try { invalidateScan(); } catch (e) {} },
   });
   if (started.error) {
     audit.record({
@@ -1375,89 +1384,83 @@ function saveAstrbotConfig(cfg) {
 function safeParse(s) {
   try { return JSON.parse(s); } catch { return null; }
 }
-// Reject private and loopback targets.
-function isPrivateHost(hostname) {
-  if (/^192\.168\.\d+\.\d+$/.test(hostname)) return false;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') return false;
-  if (net.isIP(hostname)) {
-    const ip = hostname;
-    if (ip.startsWith('10.') || ip.startsWith('172.16.') || ip.startsWith('192.168.')) return true;
-    if (ip === '0.0.0.0' || ip.startsWith('127.') || ip.startsWith('169.254.')) return true;
-  }
-  return false;
-}
-
 function astrbotHttp(method, urlStr, token, bodyObj) {
-  return new Promise((resolve, reject) => {
+  return (async () => {
     let u;
-    try { u = new URL(urlStr); } catch { return reject(new Error('AstrBot 地址无效：' + urlStr)); }
-    if (isPrivateHost(u.hostname)) {
-      return reject(new Error('安全限制：不允许访问内网地址 ' + u.hostname));
-    }
+    try { u = new URL(urlStr); } catch { throw new Error('AstrBot 地址无效：' + urlStr); }
+
+    // Same DNS-resolved, fail-closed guard as the online image proxy. Checking
+    // only the hostname string lets 192.168.x, 127.0.0.1, ::1 and names that
+    // resolve inward through.
+    const ssrfErr = await ssrfCheck(u);
+    if (ssrfErr) throw new Error('安全限制：' + ssrfErr);
+
     const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
-    const req = http.request({
-      method,
-      hostname: u.hostname,
-      port: u.port || 80,
-      path: u.pathname + u.search,
-      headers,
-      timeout: 15000
-    }, (res) => {
-      let buf = '';
-      let plain = null;
-      res.setEncoding('utf8');
-      res.on('data', (c) => {
-        buf += c;
-        if (plain) return;
-        buf.split('\n').forEach((line) => {
-          const s = line.trim();
-          if (s.startsWith('data:')) {
-            const json = s.slice(5).trim();
-            if (json && json !== '[DONE]') {
-              try { const o = JSON.parse(json); if (o.type === 'plain') plain = o.data; } catch {}
+
+    return await new Promise((resolve, reject) => {
+      const req = http.request({
+        method,
+        hostname: u.hostname,
+        port: u.port || 80,
+        path: u.pathname + u.search,
+        headers,
+        timeout: 15000
+      }, (res) => {
+        let buf = '';
+        let plain = null;
+        res.setEncoding('utf8');
+        res.on('data', (c) => {
+          buf += c;
+          if (plain) return;
+          buf.split('\n').forEach((line) => {
+            const s = line.trim();
+            if (s.startsWith('data:')) {
+              const json = s.slice(5).trim();
+              if (json && json !== '[DONE]') {
+                try { const o = JSON.parse(json); if (o.type === 'plain') plain = o.data; } catch {}
+              }
             }
-          }
+          });
         });
+        res.on('end', () => resolve({ status: res.statusCode, body: buf, plain }));
       });
-      res.on('end', () => resolve({ status: res.statusCode, body: buf, plain }));
+      req.on('timeout', () => req.destroy(new Error('AstrBot 响应超时')));
+      req.on('error', reject);
+      if (bodyObj) req.write(JSON.stringify(bodyObj));
+      req.end();
     });
-    req.on('timeout', () => req.destroy(new Error('AstrBot 响应超时')));
-    req.on('error', reject);
-    if (bodyObj) req.write(JSON.stringify(bodyObj));
-    req.end();
-  });
+  })();
 }
 
 function astrbotSendCommand(base, token, sid, command) {
-  return new Promise((resolve, reject) => {
+  return (async () => {
     const urlStr = base + '/api/v1/chat';
     let u;
-    try { u = new URL(urlStr); } catch { return reject(new Error('AstrBot 地址无效：' + urlStr)); }
-    if (isPrivateHost(u.hostname)) {
-      return reject(new Error('安全限制：不允许访问内网地址 ' + u.hostname));
-    }
+    try { u = new URL(urlStr); } catch { throw new Error('AstrBot 地址无效：' + urlStr); }
+    const ssrfErr = await ssrfCheck(u);
+    if (ssrfErr) throw new Error('安全限制：' + ssrfErr);
     const body = JSON.stringify({ session_id: sid, message: command });
-    const req = http.request({
-      method: 'POST',
-      hostname: u.hostname,
-      port: u.port || 80,
-      path: u.pathname + u.search,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token,
-        'Content-Length': Buffer.byteLength(body)
-      },
-      timeout: 15000
-    }, (res) => {
-      res.resume();
-      resolve({ status: res.statusCode });
+    return await new Promise((resolve, reject) => {
+      const req = http.request({
+        method: 'POST',
+        hostname: u.hostname,
+        port: u.port || 80,
+        path: u.pathname + u.search,
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+        timeout: 15000
+      }, (res) => {
+        let buf = '';
+        res.setEncoding('utf8');
+        res.on('data', c => { buf += c; });
+        res.on('end', () => resolve({ status: res.statusCode, body: buf }));
+      });
+      req.on('timeout', () => req.destroy(new Error('AstrBot 响应超时')));
+      req.on('error', reject);
+      req.write(body);
+      req.end();
     });
-    req.on('timeout', () => req.destroy(new Error('AstrBot 响应超时')));
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
+  })();
 }
 function astrbotBase(cfg) {
   let a = (cfg.address || '').trim();
@@ -1473,17 +1476,17 @@ async function astrbotLogin(cfg) {
   if (!token) throw new Error('AstrBot 登录失败（账号或密码错误）');
   return { base, token };
 }
-app.get('/api/astrbot/config', authMiddleware, async (req, res) => {
+app.get('/api/astrbot/config', authMiddleware, adminOnly, async (req, res) => {
   const c = loadAstrbotConfig();
   res.json({ address: c.address || '', username: c.username || '' });
 });
-app.post('/api/astrbot/config', authMiddleware, async (req, res) => {
+app.post('/api/astrbot/config', authMiddleware, adminOnly, async (req, res) => {
   const { address, username, password } = req.body || {};
   if (!address) return res.status(400).json({ status: 'error', message: '请填写 AstrBot 地址' });
   saveAstrbotConfig({ address, username, password });
   res.json({ status: 'ok' });
 });
-app.post('/api/astrbot/command', authMiddleware, async (req, res) => {
+app.post('/api/astrbot/command', authMiddleware, adminOnly, async (req, res) => {
   const cfg = loadAstrbotConfig();
   if (!cfg.address || !cfg.username) {
     return res.json({ status: 'error', code: 'no_config', message: 'AstrBot 未配置，请先在弹窗里填好地址 / 账号 / 密码' });
@@ -1513,7 +1516,7 @@ app.post('/api/astrbot/command', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/astrbot/session/:id', authMiddleware, async (req, res) => {
+app.get('/api/astrbot/session/:id', authMiddleware, adminOnly, async (req, res) => {
   const cfg = loadAstrbotConfig();
   if (!cfg.address || !cfg.username) {
     return res.json({ status: 'error', code: 'no_config', message: 'AstrBot 未配置' });
@@ -1537,7 +1540,7 @@ app.get('/api/astrbot/session/:id', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/astrbot/attachment/:sid/:aid', authMiddleware, async (req, res) => {
+app.get('/api/astrbot/attachment/:sid/:aid', authMiddleware, adminOnly, async (req, res) => {
   const cfg = loadAstrbotConfig();
   if (!cfg.address || !cfg.username) return res.status(401).end();
   try {
@@ -1545,7 +1548,8 @@ app.get('/api/astrbot/attachment/:sid/:aid', authMiddleware, async (req, res) =>
     const url = base + '/api/v1/file?attachment_id=' + encodeURIComponent(req.params.aid);
     let u;
     try { u = new URL(url); } catch { return res.status(400).end(); }
-    if (isPrivateHost(u.hostname)) return res.status(400).end();
+    const attachSsrf = await ssrfCheck(u);
+    if (attachSsrf) return res.status(400).end();
     const pr = http.request({
       method: 'GET',
       hostname: u.hostname,
@@ -1631,7 +1635,9 @@ app.use('/api', async (req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error('[error]', req.method, req.originalUrl, err);
+  // Query strings carry the JWT when images are opened via <img>; never log them.
+  const safePath = (req.originalUrl || '').split('?')[0];
+  console.error('[error]', req.method, safePath, err && err.message);
   if (res.headersSent) return next(err);
   res.status(500).json({ error: '服务器内部错误' });
 });
@@ -1648,7 +1654,7 @@ if (require.main === module) {
     console.log(`fnOS Comic Reader running at http://0.0.0.0:${PORT}`);
     console.log(`Comics directory: ${COMICS_DIR}`);
     console.log(`Data directory: ${DATA_DIR}`);
-    console.log(`JWT secret: ${JWT_SECRET.slice(0, 8)}... (持久化)`);
+    console.log('JWT secret: 已持久化到 DATA_DIR/.jwt-secret');
 
     startAutoDecryptScheduler(readLibs);
   });

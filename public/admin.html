@@ -173,10 +173,11 @@ async function loadUsers(){
  try{
   var r=await api('/api/admin/users'); var users=await r.json();
   document.getElementById('userList').innerHTML=users.map(function(u){
+   var un=escAttr(u.username);
    return '<li><div class="user-info"><span>'+esc(u.username)+'</span><span class="role-badge '+(u.role=='admin'?'role-admin':'role-user')+'">'+u.role+'</span></div>'+
-    '<div class="user-actions"><button class="btn btn-primary" onclick="setRole(\''+u.username+'\',\''+(u.role=='admin'?'user':'admin')+'\')">'+(u.role=='admin'?'降为用户':'设为管理员')+'</button>'+
-    '<button class="btn btn-danger" onclick="resetPwd(\''+u.username+'\')">重置密码</button>'+
-    (u.role!='admin'?'<button class="btn btn-danger" onclick="delUser(\''+u.username+'\')">删除</button>':'')+'</div></li>';
+    '<div class="user-actions"><button class="btn btn-primary" onclick="setRole(\''+un+'\',\''+(u.role=='admin'?'user':'admin')+'\')">'+(u.role=='admin'?'降为用户':'设为管理员')+'</button>'+
+    '<button class="btn btn-danger" onclick="resetPwd(\''+un+'\')">重置密码</button>'+
+    (u.role!='admin'?'<button class="btn btn-danger" onclick="delUser(\''+un+'\')">删除</button>':'')+'</div></li>';
   }).join('');
  }catch(e){}
 }
@@ -258,6 +259,12 @@ async function clearDecrypt(){
 
 function showMsg(id,text,err){ var el=document.getElementById(id); el.textContent=text; el.className='msg '+(err?'msg-error':'msg-ok'); }
 function esc(s){ var d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+// esc() escapes text nodes only; attribute/JS-string contexts need quotes and
+// backslashes escaped too, or a username could break out of the onclick handler.
+function escAttr(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')
+    .replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\\/g,'\\\\');
+}
 
 var logOffset = 0;
 var ACTION_LABEL = {
